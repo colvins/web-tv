@@ -45,7 +45,7 @@ const queryModel = computed({
 
     <LivePlayer :playback="playback" />
 
-    <div class="grid gap-4 pb-6">
+    <div class="grid gap-4">
       <div class="glass-panel rounded-[1.5rem] p-3 sm:rounded-[2rem] sm:p-4">
         <div class="flex w-full flex-col gap-3 sm:flex-row">
           <NInput v-model:value="queryModel" round clearable placeholder="Search channels" class="w-full sm:min-w-72">
@@ -87,7 +87,9 @@ const queryModel = computed({
           </button>
         </div>
       </div>
+    </div>
 
+    <div class="live-mobile-channel-content grid gap-4 pb-6">
       <div v-if="loading && channels.length === 0" class="grid grid-cols-2 gap-3">
         <div v-for="index in 8" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
       </div>
@@ -122,5 +124,11 @@ const queryModel = computed({
 <style scoped>
 .chip-scroller::-webkit-scrollbar {
   display: none;
+}
+
+.live-mobile-channel-content {
+  --live-mobile-flow-gap: 1.25rem;
+  margin-top: var(--live-mobile-flow-gap);
+  scroll-margin-top: var(--live-mobile-flow-gap);
 }
 </style>
