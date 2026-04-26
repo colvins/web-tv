@@ -105,3 +105,28 @@ class SpiderArtifactRead(BaseModel):
     probed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class SpiderArtifactEntryAnalysisRead(BaseModel):
+    id: uuid.UUID
+    spider_artifact_id: uuid.UUID
+    source_config_id: uuid.UUID
+    source_snapshot_id: uuid.UUID | None = None
+    analysis_status: Literal["success", "failed"]
+    error_message: str | None = None
+    total_entries: int | None = None
+    total_compressed_size: int | None = None
+    total_uncompressed_size: int | None = None
+    top_level_dirs: list[str]
+    extension_counts: dict[str, int]
+    matching_api_entries: list[str]
+    sample_entries: list[str]
+    has_class: bool
+    has_dex: bool
+    has_js: bool
+    has_json: bool
+    has_assets: bool
+    has_catvod_package: bool
+    suspicious_large_entries: int
+    created_at: datetime
+    updated_at: datetime

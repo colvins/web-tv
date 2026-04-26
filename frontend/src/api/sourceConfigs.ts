@@ -162,6 +162,31 @@ export type SpiderArtifact = {
   updated_at: string
 }
 
+export type SpiderArtifactEntryAnalysis = {
+  id: string
+  spider_artifact_id: string
+  source_config_id: string
+  source_snapshot_id: string | null
+  analysis_status: 'success' | 'failed'
+  error_message: string | null
+  total_entries: number | null
+  total_compressed_size: number | null
+  total_uncompressed_size: number | null
+  top_level_dirs: string[]
+  extension_counts: Record<string, number>
+  matching_api_entries: string[]
+  sample_entries: string[]
+  has_class: boolean
+  has_dex: boolean
+  has_js: boolean
+  has_json: boolean
+  has_assets: boolean
+  has_catvod_package: boolean
+  suspicious_large_entries: number
+  created_at: string
+  updated_at: string
+}
+
 export function listSourceConfigs(): Promise<SourceConfig[]> {
   return apiRequest<SourceConfig[]>('/configs')
 }
@@ -240,6 +265,21 @@ export function probeSpiderArtifact(): Promise<SpiderArtifact> {
   return apiRequest<SpiderArtifact>('/settings/current-vod-site/spider-artifact/probe', {
     method: 'POST',
   })
+}
+
+export function getLatestSpiderArtifactEntryAnalysis(): Promise<SpiderArtifactEntryAnalysis | null> {
+  return apiRequest<SpiderArtifactEntryAnalysis | null>(
+    '/settings/current-vod-site/spider-artifact/entry-analysis/latest',
+  )
+}
+
+export function analyzeSpiderArtifactEntries(): Promise<SpiderArtifactEntryAnalysis | null> {
+  return apiRequest<SpiderArtifactEntryAnalysis | null>(
+    '/settings/current-vod-site/spider-artifact/analyze-entries',
+    {
+      method: 'POST',
+    },
+  )
 }
 
 export function setCurrentVodSite(vodSiteId: string): Promise<CurrentVodSite> {

@@ -5,15 +5,18 @@ import { NButton, useMessage } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 
 import {
+  analyzeSpiderArtifactEntries,
   getCurrentVodSite,
   getCurrentVodSiteAnalysis,
   getCurrentVodSiteSpiderAnalysis,
   getLatestSpiderArtifact,
+  getLatestSpiderArtifactEntryAnalysis,
   probeSpiderArtifact,
   type CurrentVodSite,
   type CurrentVodSiteAnalysis,
   type CurrentVodSiteSpiderAnalysis,
   type SpiderArtifact,
+  type SpiderArtifactEntryAnalysis,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 
@@ -25,8 +28,11 @@ const spiderAnalysis = ref<CurrentVodSiteSpiderAnalysis | null>(null)
 const spiderAnalysisError = ref<string | null>(null)
 const spiderArtifact = ref<SpiderArtifact | null>(null)
 const spiderArtifactError = ref<string | null>(null)
+const entryAnalysis = ref<SpiderArtifactEntryAnalysis | null>(null)
+const entryAnalysisError = ref<string | null>(null)
 const loading = ref(false)
 const probingArtifact = ref(false)
+const analyzingEntries = ref(false)
 
 const knownFlagItems = computed(() =>
   analysis.value
@@ -45,6 +51,8 @@ async function loadCurrentSite() {
   spiderAnalysisError.value = null
   spiderArtifact.value = null
   spiderArtifactError.value = null
+  entryAnalysis.value = null
+  entryAnalysisError.value = null
   try {
     currentSite.value = await getCurrentVodSite()
     if (currentSite.value) {
@@ -76,6 +84,12 @@ async function loadCurrentSite() {
         spiderArtifactError.value =
           error instanceof ApiError ? error.message : 'Unable to load spider artifact probe'
       }
+      try {
+        entryAnalysis.value = await getLatestSpiderArtifactEntryAnalysis()
+      } catch (error) {
+        entryAnalysisError.value =
+          error instanceof ApiError ? error.message : 'Unable to load artifact entry analysis'
+      }
     }
   } catch (error) {
     message.error(error instanceof ApiError ? error.message : 'Unable to load current VOD site')
@@ -84,11 +98,30 @@ async function loadCurrentSite() {
   }
 }
 
+async function runEntryAnalysis() {
+  analyzingEntries.value = true
+  entryAnalysisError.value = null
+  try {
+    const result = await analyzeSpiderArtifactEntries()
+    if (result) {
+      entryAnalysis.value = result
+    } else {
+      entryAnalysisError.value = 'Run the artifact probe before analyzing entries.'
+    }
+  } catch (error) {
+    entryAnalysisError.value =
+      error instanceof ApiError ? error.message : 'Unable to analyze artifact entries'
+  } finally {
+    analyzingEntries.value = false
+  }
+}
+
 async function runSpiderArtifactProbe() {
   probingArtifact.value = true
   spiderArtifactError.value = null
   try {
     spiderArtifact.value = await probeSpiderArtifact()
+    entryAnalysis.value = null
   } catch (error) {
     spiderArtifactError.value =
       error instanceof ApiError ? error.message : 'Unable to probe spider artifact'
@@ -113,6 +146,19 @@ function shortUrl(value: string | null): string {
   if (!value) return 'Not available'
   return value.length > 92 ? `${value.slice(0, 54)}...${value.slice(-30)}` : value
 }
+
+function formatBytes(value: number | null): string {
+  if (value === null) return 'Not available'
+  return new Intl.NumberFormat().format(value)
+}
+
+const extensionCountItems = computed(() =>
+  entryAnalysis.value
+    ? Object.entries(entryAnalysis.value.extension_counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 16)
+    : [],
+)
 
 function supportLevelLabel(level: string) {
   return level.replaceAll('_', ' ')
@@ -458,6 +504,104 @@ onMounted(loadCurrentSite)
 
       <div v-else-if="!spiderArtifactError" class="mt-7 rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
         <p class="text-sm text-white/52">No artifact probe has been stored for the current source.</p>
+      </div>
+    </article>
+
+    <article v-if="currentSite" class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.26em] text-white/42">Artifact Entry Analysis</p>
+          <h3 class="mt-3 text-2xl font-semibold text-white sm:text-3xl">
+            {{ entryAnalysis ? `${entryAnalysis.total_entries ?? 0} entries` : 'ZIP directory metadata' }}
+          </h3>
+          <p class="mt-3 max-w-3xl text-sm leading-6 text-white/58">
+            Reads ZIP/JAR entry names and sizes in memory only. Files are not extracted, classes are not loaded, and code is not executed.
+          </p>
+        </div>
+        <NButton round secondary :loading="analyzingEntries" @click="runEntryAnalysis">
+          Analyze Entries
+        </NButton>
+      </div>
+
+      <p
+        v-if="entryAnalysisError"
+        class="mt-5 rounded-3xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100"
+      >
+        {{ entryAnalysisError }}
+      </p>
+
+      <div v-if="entryAnalysis" class="mt-7 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Total entries</p>
+          <p class="mt-2 text-lg font-semibold text-white">{{ entryAnalysis.total_entries ?? 'Not available' }}</p>
+          <p class="mt-2 text-sm text-white/54">Status: {{ entryAnalysis.analysis_status }}</p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Compressed size</p>
+          <p class="mt-2 text-lg font-semibold text-white">{{ formatBytes(entryAnalysis.total_compressed_size) }}</p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Uncompressed size</p>
+          <p class="mt-2 text-lg font-semibold text-white">{{ formatBytes(entryAnalysis.total_uncompressed_size) }}</p>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-3">
+          <p class="text-sm text-white/42">Flags</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72">class: {{ entryAnalysis.has_class ? 'Yes' : 'No' }}</span>
+            <span class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72">dex: {{ entryAnalysis.has_dex ? 'Yes' : 'No' }}</span>
+            <span class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72">js: {{ entryAnalysis.has_js ? 'Yes' : 'No' }}</span>
+            <span class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72">json: {{ entryAnalysis.has_json ? 'Yes' : 'No' }}</span>
+            <span class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72">assets: {{ entryAnalysis.has_assets ? 'Yes' : 'No' }}</span>
+            <span class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72">catvod: {{ entryAnalysis.has_catvod_package ? 'Yes' : 'No' }}</span>
+          </div>
+          <p v-if="entryAnalysis.error_message" class="mt-4 text-sm text-amber-100">
+            {{ entryAnalysis.error_message }}
+          </p>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Extension counts</p>
+          <div class="mt-3 grid grid-cols-2 gap-2 text-sm text-white/72">
+            <p v-for="[extension, count] in extensionCountItems" :key="extension">
+              {{ extension }}: {{ count }}
+            </p>
+            <p v-if="extensionCountItems.length === 0" class="text-white/52">No extensions</p>
+          </div>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-2">
+          <p class="text-sm text-white/42">Matching API entries</p>
+          <div class="mt-3 max-h-36 overflow-auto space-y-2">
+            <p
+              v-for="entry in entryAnalysis.matching_api_entries"
+              :key="entry"
+              class="break-all font-mono text-xs text-white/66"
+            >
+              {{ entry }}
+            </p>
+            <p v-if="entryAnalysis.matching_api_entries.length === 0" class="text-sm text-white/52">
+              No matching entries found
+            </p>
+          </div>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-3">
+          <p class="text-sm text-white/42">Sample entries</p>
+          <div class="mt-3 grid max-h-44 gap-2 overflow-auto md:grid-cols-2">
+            <p
+              v-for="entry in entryAnalysis.sample_entries"
+              :key="entry"
+              class="break-all font-mono text-xs text-white/58"
+            >
+              {{ entry }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="!entryAnalysisError" class="mt-7 rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+        <p class="text-sm text-white/52">No entry analysis has been stored for the current artifact.</p>
       </div>
     </article>
   </section>

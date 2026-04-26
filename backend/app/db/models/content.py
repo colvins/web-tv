@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,10 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     spider_artifacts: Mapped[list["SpiderArtifact"]] = relationship(
+        back_populates="source_config",
+        cascade="all, delete-orphan",
+    )
+    spider_artifact_analyses: Mapped[list["SpiderArtifactAnalysis"]] = relationship(
         back_populates="source_config",
         cascade="all, delete-orphan",
     )
@@ -98,6 +102,7 @@ class SourceSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     source_config: Mapped[SourceConfig] = relationship(back_populates="snapshots")
     import_job: Mapped[ImportJob | None] = relationship(back_populates="snapshots")
     spider_artifacts: Mapped[list["SpiderArtifact"]] = relationship(back_populates="source_snapshot")
+    spider_artifact_analyses: Mapped[list["SpiderArtifactAnalysis"]] = relationship(back_populates="source_snapshot")
 
     __table_args__ = (
         UniqueConstraint("source_config_id", "content_sha256", name="uq_source_snapshots_source_sha"),
@@ -132,11 +137,63 @@ class SpiderArtifact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     source_config: Mapped[SourceConfig] = relationship(back_populates="spider_artifacts")
     source_snapshot: Mapped[SourceSnapshot | None] = relationship(back_populates="spider_artifacts")
+    entry_analyses: Mapped[list["SpiderArtifactAnalysis"]] = relationship(
+        back_populates="spider_artifact",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         CheckConstraint("probe_status IN ('pending', 'success', 'failed')", name="ck_spider_artifacts_status"),
         UniqueConstraint("source_config_id", "artifact_url", "expected_md5", name="uq_spider_artifacts_source_url_md5"),
         Index("ix_spider_artifacts_source_created", "source_config_id", "created_at"),
+    )
+
+
+class SpiderArtifactAnalysis(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "spider_artifact_analyses"
+
+    spider_artifact_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("spider_artifacts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("source_snapshots.id", ondelete="SET NULL"),
+        index=True,
+    )
+    analysis_status: Mapped[str] = mapped_column(String(24), nullable=False, default="success", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    total_entries: Mapped[int | None] = mapped_column(Integer)
+    total_compressed_size: Mapped[int | None] = mapped_column(BigInteger)
+    total_uncompressed_size: Mapped[int | None] = mapped_column(BigInteger)
+    top_level_dirs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    extension_counts: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
+    matching_api_entries: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    sample_entries: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    has_class: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_dex: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_js: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_json: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_assets: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_catvod_package: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suspicious_large_entries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    spider_artifact: Mapped[SpiderArtifact] = relationship(back_populates="entry_analyses")
+    source_config: Mapped[SourceConfig] = relationship(back_populates="spider_artifact_analyses")
+    source_snapshot: Mapped[SourceSnapshot | None] = relationship(back_populates="spider_artifact_analyses")
+
+    __table_args__ = (
+        CheckConstraint(
+            "analysis_status IN ('success', 'failed')",
+            name="ck_spider_artifact_analyses_status",
+        ),
+        Index("ix_spider_artifact_analyses_artifact_created", "spider_artifact_id", "created_at"),
+        Index("ix_spider_artifact_analyses_source_created", "source_config_id", "created_at"),
     )
 
 
