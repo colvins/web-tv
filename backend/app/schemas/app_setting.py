@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -86,3 +87,21 @@ class CurrentVodSiteSpiderAnalysisRead(BaseModel):
     possible_reference_summary: str
     support_strategy: CurrentVodSiteSpiderSupportStrategy
     warnings: list[str]
+
+
+class SpiderArtifactRead(BaseModel):
+    id: uuid.UUID
+    artifact_url: str
+    expected_md5: str | None = None
+    content_type: str | None = None
+    content_length: int | None = None
+    sha256: str | None = None
+    md5: str | None = None
+    md5_matches: bool | None = None
+    magic_hex: str | None = None
+    detected_kind: str | None = None
+    probe_status: Literal["pending", "success", "failed"]
+    error_message: str | None = None
+    probed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime

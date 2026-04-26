@@ -144,6 +144,24 @@ export type CurrentVodSiteSpiderAnalysis = {
   warnings: string[]
 }
 
+export type SpiderArtifact = {
+  id: string
+  artifact_url: string
+  expected_md5: string | null
+  content_type: string | null
+  content_length: number | null
+  sha256: string | null
+  md5: string | null
+  md5_matches: boolean | null
+  magic_hex: string | null
+  detected_kind: string | null
+  probe_status: 'pending' | 'success' | 'failed'
+  error_message: string | null
+  probed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export function listSourceConfigs(): Promise<SourceConfig[]> {
   return apiRequest<SourceConfig[]>('/configs')
 }
@@ -212,6 +230,16 @@ export function getCurrentVodSiteAnalysis(): Promise<CurrentVodSiteAnalysis | nu
 
 export function getCurrentVodSiteSpiderAnalysis(): Promise<CurrentVodSiteSpiderAnalysis | null> {
   return apiRequest<CurrentVodSiteSpiderAnalysis | null>('/settings/current-vod-site/spider-analysis')
+}
+
+export function getLatestSpiderArtifact(): Promise<SpiderArtifact | null> {
+  return apiRequest<SpiderArtifact | null>('/settings/current-vod-site/spider-artifact/latest')
+}
+
+export function probeSpiderArtifact(): Promise<SpiderArtifact> {
+  return apiRequest<SpiderArtifact>('/settings/current-vod-site/spider-artifact/probe', {
+    method: 'POST',
+  })
 }
 
 export function setCurrentVodSite(vodSiteId: string): Promise<CurrentVodSite> {

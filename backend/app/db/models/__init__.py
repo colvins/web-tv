@@ -8,6 +8,7 @@ from app.db.models.content import (
     PlayHistory,
     SourceConfig,
     SourceSnapshot,
+    SpiderArtifact,
     VodCache,
     VodSite,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "PlayHistory",
     "SourceConfig",
     "SourceSnapshot",
+    "SpiderArtifact",
     "VodCache",
     "VodSite",
 ]

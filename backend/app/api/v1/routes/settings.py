@@ -7,8 +7,9 @@ from app.schemas.app_setting import (
     CurrentVodSiteRead,
     CurrentVodSiteSpiderAnalysisRead,
     CurrentVodSiteUpdate,
+    SpiderArtifactRead,
 )
-from app.services import app_settings
+from app.services import app_settings, spider_artifacts
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -27,6 +28,16 @@ async def get_current_vod_site_analysis(db: AsyncSession = Depends(get_db)) -> d
 @router.get("/current-vod-site/spider-analysis", response_model=CurrentVodSiteSpiderAnalysisRead | None)
 async def get_current_vod_site_spider_analysis(db: AsyncSession = Depends(get_db)) -> dict | None:
     return await app_settings.get_current_vod_site_spider_analysis(db)
+
+
+@router.get("/current-vod-site/spider-artifact/latest", response_model=SpiderArtifactRead | None)
+async def get_latest_spider_artifact(db: AsyncSession = Depends(get_db)) -> object | None:
+    return await spider_artifacts.latest_current_spider_artifact(db)
+
+
+@router.post("/current-vod-site/spider-artifact/probe", response_model=SpiderArtifactRead)
+async def probe_spider_artifact(db: AsyncSession = Depends(get_db)) -> object:
+    return await spider_artifacts.probe_current_spider_artifact(db)
 
 
 @router.put("/current-vod-site", response_model=CurrentVodSiteRead)

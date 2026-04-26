@@ -8,9 +8,12 @@ import {
   getCurrentVodSite,
   getCurrentVodSiteAnalysis,
   getCurrentVodSiteSpiderAnalysis,
+  getLatestSpiderArtifact,
+  probeSpiderArtifact,
   type CurrentVodSite,
   type CurrentVodSiteAnalysis,
   type CurrentVodSiteSpiderAnalysis,
+  type SpiderArtifact,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 
@@ -20,7 +23,10 @@ const analysis = ref<CurrentVodSiteAnalysis | null>(null)
 const analysisError = ref<string | null>(null)
 const spiderAnalysis = ref<CurrentVodSiteSpiderAnalysis | null>(null)
 const spiderAnalysisError = ref<string | null>(null)
+const spiderArtifact = ref<SpiderArtifact | null>(null)
+const spiderArtifactError = ref<string | null>(null)
 const loading = ref(false)
+const probingArtifact = ref(false)
 
 const knownFlagItems = computed(() =>
   analysis.value
@@ -37,6 +43,8 @@ async function loadCurrentSite() {
   analysisError.value = null
   spiderAnalysis.value = null
   spiderAnalysisError.value = null
+  spiderArtifact.value = null
+  spiderArtifactError.value = null
   try {
     currentSite.value = await getCurrentVodSite()
     if (currentSite.value) {
@@ -62,11 +70,30 @@ async function loadCurrentSite() {
         spiderAnalysisError.value =
           error instanceof ApiError ? error.message : 'Unable to load spider reference analysis'
       }
+      try {
+        spiderArtifact.value = await getLatestSpiderArtifact()
+      } catch (error) {
+        spiderArtifactError.value =
+          error instanceof ApiError ? error.message : 'Unable to load spider artifact probe'
+      }
     }
   } catch (error) {
     message.error(error instanceof ApiError ? error.message : 'Unable to load current VOD site')
   } finally {
     loading.value = false
+  }
+}
+
+async function runSpiderArtifactProbe() {
+  probingArtifact.value = true
+  spiderArtifactError.value = null
+  try {
+    spiderArtifact.value = await probeSpiderArtifact()
+  } catch (error) {
+    spiderArtifactError.value =
+      error instanceof ApiError ? error.message : 'Unable to probe spider artifact'
+  } finally {
+    probingArtifact.value = false
   }
 }
 
@@ -78,12 +105,16 @@ function formatFlagValue(value: unknown): string {
   return String(value)
 }
 
-function supportLevelLabel(
-  level:
-    | CurrentVodSiteAnalysis['support_assessment']['level']
-    | CurrentVodSiteSpiderAnalysis['support_strategy']['level']
-    | CurrentVodSiteSpiderAnalysis['possible_reference_type'],
-) {
+function shortHash(value: string | null): string {
+  return value ? `${value.slice(0, 12)}...${value.slice(-8)}` : 'Not available'
+}
+
+function shortUrl(value: string | null): string {
+  if (!value) return 'Not available'
+  return value.length > 92 ? `${value.slice(0, 54)}...${value.slice(-30)}` : value
+}
+
+function supportLevelLabel(level: string) {
   return level.replaceAll('_', ' ')
 }
 
@@ -354,6 +385,79 @@ onMounted(loadCurrentSite)
 
       <div v-else class="mt-7 rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
         <p class="text-sm text-white/52">Loading spider reference analysis...</p>
+      </div>
+    </article>
+
+    <article v-if="currentSite" class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.26em] text-white/42">Spider Artifact Probe</p>
+          <h3 class="mt-3 text-2xl font-semibold text-white sm:text-3xl">
+            {{ spiderArtifact?.detected_kind ? supportLevelLabel(spiderArtifact.detected_kind) : 'Static metadata only' }}
+          </h3>
+          <p class="mt-3 max-w-3xl text-sm leading-6 text-white/58">
+            Downloads only the root spider artifact and stores hashes, size, and magic bytes. It does not execute or inspect runtime behavior.
+          </p>
+        </div>
+        <NButton round secondary :loading="probingArtifact" @click="runSpiderArtifactProbe">
+          Probe Artifact
+        </NButton>
+      </div>
+
+      <p
+        v-if="spiderArtifactError"
+        class="mt-5 rounded-3xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100"
+      >
+        {{ spiderArtifactError }}
+      </p>
+
+      <div v-if="spiderArtifact" class="mt-7 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Detected kind</p>
+          <p class="mt-2 text-lg font-semibold capitalize text-white">
+            {{ spiderArtifact.detected_kind ? supportLevelLabel(spiderArtifact.detected_kind) : 'Unknown' }}
+          </p>
+          <p class="mt-2 text-sm text-white/54">Status: {{ spiderArtifact.probe_status }}</p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Content length</p>
+          <p class="mt-2 text-lg font-semibold text-white">
+            {{ spiderArtifact.content_length ?? 'Not available' }}
+          </p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">MD5 match</p>
+          <p class="mt-2 text-lg font-semibold text-white">
+            {{
+              spiderArtifact.md5_matches === null
+                ? 'No expected MD5'
+                : spiderArtifact.md5_matches
+                  ? 'Yes'
+                  : 'No'
+            }}
+          </p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Magic bytes</p>
+          <p class="mt-2 break-all font-mono text-sm text-white/78">
+            {{ spiderArtifact.magic_hex ?? 'Not available' }}
+          </p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 md:col-span-2">
+          <p class="text-sm text-white/42">SHA256</p>
+          <p class="mt-2 break-all font-mono text-sm text-white/78">{{ shortHash(spiderArtifact.sha256) }}</p>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-3">
+          <p class="text-sm text-white/42">Artifact URL</p>
+          <p class="mt-2 break-all font-mono text-xs text-white/68">{{ shortUrl(spiderArtifact.artifact_url) }}</p>
+          <p v-if="spiderArtifact.error_message" class="mt-4 text-sm text-amber-100">
+            {{ spiderArtifact.error_message }}
+          </p>
+        </div>
+      </div>
+
+      <div v-else-if="!spiderArtifactError" class="mt-7 rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+        <p class="text-sm text-white/52">No artifact probe has been stored for the current source.</p>
       </div>
     </article>
   </section>

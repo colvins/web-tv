@@ -23,6 +23,10 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     import_jobs: Mapped[list["ImportJob"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
+    spider_artifacts: Mapped[list["SpiderArtifact"]] = relationship(
+        back_populates="source_config",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         CheckConstraint("source_type IN ('json', 'm3u', 'txt', 'm3u8')", name="ck_source_configs_source_type"),
@@ -93,10 +97,46 @@ class SourceSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     source_config: Mapped[SourceConfig] = relationship(back_populates="snapshots")
     import_job: Mapped[ImportJob | None] = relationship(back_populates="snapshots")
+    spider_artifacts: Mapped[list["SpiderArtifact"]] = relationship(back_populates="source_snapshot")
 
     __table_args__ = (
         UniqueConstraint("source_config_id", "content_sha256", name="uq_source_snapshots_source_sha"),
         Index("ix_source_snapshots_source_created", "source_config_id", "created_at"),
+    )
+
+
+class SpiderArtifact(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "spider_artifacts"
+
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_snapshot_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("source_snapshots.id", ondelete="SET NULL"),
+        index=True,
+    )
+    artifact_url: Mapped[str] = mapped_column(Text, nullable=False)
+    expected_md5: Mapped[str | None] = mapped_column(String(32))
+    content_type: Mapped[str | None] = mapped_column(String(255))
+    content_length: Mapped[int | None] = mapped_column(Integer)
+    sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    md5: Mapped[str | None] = mapped_column(String(32), index=True)
+    md5_matches: Mapped[bool | None] = mapped_column(Boolean)
+    magic_hex: Mapped[str | None] = mapped_column(String(64))
+    detected_kind: Mapped[str | None] = mapped_column(String(40), index=True)
+    probe_status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending", index=True)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    probed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    source_config: Mapped[SourceConfig] = relationship(back_populates="spider_artifacts")
+    source_snapshot: Mapped[SourceSnapshot | None] = relationship(back_populates="spider_artifacts")
+
+    __table_args__ = (
+        CheckConstraint("probe_status IN ('pending', 'success', 'failed')", name="ck_spider_artifacts_status"),
+        UniqueConstraint("source_config_id", "artifact_url", "expected_md5", name="uq_spider_artifacts_source_url_md5"),
+        Index("ix_spider_artifacts_source_created", "source_config_id", "created_at"),
     )
 
 
