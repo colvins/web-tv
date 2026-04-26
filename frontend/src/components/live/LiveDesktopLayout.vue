@@ -32,6 +32,7 @@ const queryModel = computed({
   set: (value: string) => emit('update:query', value),
 })
 
+const liveDesktopLayout = ref<HTMLElement | null>(null)
 const groupScroller = ref<HTMLElement | null>(null)
 const stickyLiveArea = ref<HTMLElement | null>(null)
 const groupPointerDown = ref(false)
@@ -40,14 +41,23 @@ const suppressNextGroupClick = ref(false)
 const stickyCompact = ref(false)
 
 let suppressGroupClickTimer: number | undefined
+let stickyResizeObserver: ResizeObserver | undefined
 let groupDragStartX = 0
 let groupDragStartY = 0
 let groupDragStartScrollLeft = 0
 const groupDragThreshold = 6
+const liveStickyGap = 24
 
 function updateStickyCompact() {
   const top = stickyLiveArea.value?.getBoundingClientRect().top ?? 0
   stickyCompact.value = window.scrollY > 120 && top <= 24
+  updateStickySafeOffset()
+}
+
+function updateStickySafeOffset() {
+  const stickyHeight = stickyLiveArea.value?.getBoundingClientRect().height ?? 0
+  if (!liveDesktopLayout.value || stickyHeight === 0) return
+  liveDesktopLayout.value.style.setProperty('--live-sticky-safe-offset', `${Math.ceil(stickyHeight + liveStickyGap)}px`)
 }
 
 function clearSuppressGroupClickTimer() {
@@ -113,19 +123,25 @@ function resetGroupDrag(event: PointerEvent) {
 
 onMounted(() => {
   updateStickyCompact()
+  updateStickySafeOffset()
+  if (stickyLiveArea.value) {
+    stickyResizeObserver = new ResizeObserver(updateStickySafeOffset)
+    stickyResizeObserver.observe(stickyLiveArea.value)
+  }
   window.addEventListener('scroll', updateStickyCompact, { passive: true })
   window.addEventListener('resize', updateStickyCompact)
 })
 
 onBeforeUnmount(() => {
   clearSuppressGroupClickTimer()
+  stickyResizeObserver?.disconnect()
   window.removeEventListener('scroll', updateStickyCompact)
   window.removeEventListener('resize', updateStickyCompact)
 })
 </script>
 
 <template>
-  <section class="grid gap-6 pb-28">
+  <section ref="liveDesktopLayout" class="live-desktop-layout grid gap-6 pb-28">
     <div class="glass-panel rounded-[2.5rem] p-8">
       <p class="text-sm uppercase tracking-[0.28em] text-white/42">Live TV</p>
       <h2 class="mt-3 text-5xl font-semibold text-white xl:text-6xl">{{ selectedGroupName }}</h2>
@@ -230,8 +246,11 @@ onBeforeUnmount(() => {
   display: none;
 }
 
-.live-sticky-area {
+.live-desktop-layout {
   --live-sticky-safe-offset: clamp(2.5rem, 4vw, 4.5rem);
+}
+
+.live-sticky-area {
   isolation: isolate;
 }
 
