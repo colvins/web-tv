@@ -25,11 +25,14 @@ const togglingIds = ref<Set<string>>(new Set())
 const groupScroller = ref<HTMLElement | null>(null)
 const groupDragging = ref(false)
 const groupDragMoved = ref(false)
+const ignoreNextGroupClick = ref(false)
 const playback = useLivePlayback()
 
 let searchTimer: number | undefined
 let groupDragStartX = 0
+let groupDragStartY = 0
 let groupDragStartScrollLeft = 0
+const groupDragThreshold = 6
 
 const selectedGroupName = computed(
   () => groups.value.find((group) => group.id === selectedGroupId.value)?.name ?? 'All Channels',
@@ -80,7 +83,10 @@ async function toggleChannel(channel: LiveChannel, enabled: boolean) {
 }
 
 function selectGroup(groupId: string | null) {
-  if (groupDragMoved.value) return
+  if (ignoreNextGroupClick.value) {
+    ignoreNextGroupClick.value = false
+    return
+  }
   selectedGroupId.value = groupId
 }
 
@@ -88,32 +94,46 @@ function startGroupDrag(event: PointerEvent) {
   if (event.pointerType === 'touch') return
   const scroller = groupScroller.value
   if (!scroller) return
-  groupDragging.value = true
+  groupDragging.value = false
   groupDragMoved.value = false
+  ignoreNextGroupClick.value = false
   groupDragStartX = event.clientX
+  groupDragStartY = event.clientY
   groupDragStartScrollLeft = scroller.scrollLeft
-  scroller.setPointerCapture(event.pointerId)
 }
 
 function moveGroupDrag(event: PointerEvent) {
-  if (!groupDragging.value || event.pointerType === 'touch') return
+  if (event.pointerType === 'touch') return
   const scroller = groupScroller.value
   if (!scroller) return
   const deltaX = event.clientX - groupDragStartX
-  if (Math.abs(deltaX) > 4) {
+  const deltaY = event.clientY - groupDragStartY
+
+  if (!groupDragging.value) {
+    if (Math.abs(deltaX) < groupDragThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) return
+    groupDragging.value = true
     groupDragMoved.value = true
+    scroller.setPointerCapture(event.pointerId)
   }
+
   scroller.scrollLeft = groupDragStartScrollLeft - deltaX
 }
 
 function endGroupDrag(event: PointerEvent) {
-  if (!groupDragging.value) return
+  if (!groupDragging.value) {
+    groupDragMoved.value = false
+    return
+  }
   groupDragging.value = false
   if (groupScroller.value?.hasPointerCapture(event.pointerId)) {
     groupScroller.value.releasePointerCapture(event.pointerId)
   }
+  if (groupDragMoved.value) {
+    ignoreNextGroupClick.value = true
+  }
   window.setTimeout(() => {
     groupDragMoved.value = false
+    ignoreNextGroupClick.value = false
   }, 0)
 }
 
