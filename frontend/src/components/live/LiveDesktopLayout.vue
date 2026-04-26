@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="grid gap-4 pb-6 xl:content-start xl:pb-0">
+    <div class="live-channel-content grid gap-4 pb-6 xl:content-start xl:pb-0">
       <div v-if="loading && channels.length === 0" class="grid grid-cols-4 gap-3 xl:grid-cols-5 2xl:grid-cols-6">
         <div v-for="index in 12" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
       </div>
@@ -231,7 +231,13 @@ onBeforeUnmount(() => {
 }
 
 .live-sticky-area {
+  --live-sticky-safe-offset: clamp(2.5rem, 4vw, 4.5rem);
   isolation: isolate;
+}
+
+.live-channel-content {
+  margin-top: var(--live-sticky-safe-offset);
+  scroll-margin-top: var(--live-sticky-safe-offset);
 }
 
 .live-sticky-area::before {
