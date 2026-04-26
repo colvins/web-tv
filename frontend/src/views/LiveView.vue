@@ -44,13 +44,18 @@ const isMuted = ref(false)
 const isFullscreen = ref(false)
 const playerStatusText = ref('Select a channel to start playback.')
 const videoEl = ref<HTMLVideoElement | null>(null)
+const groupScroller = ref<HTMLElement | null>(null)
 const controlsVisible = ref(true)
 const playerHovering = ref(false)
 const playerFocused = ref(false)
+const groupDragging = ref(false)
+const groupDragMoved = ref(false)
 
 let hls: Hls | null = null
 let searchTimer: number | undefined
 let controlsHideTimer: number | undefined
+let groupDragStartX = 0
+let groupDragStartScrollLeft = 0
 
 const selectedGroupName = computed(
   () => groups.value.find((group) => group.id === selectedGroupId.value)?.name ?? 'All Channels',
@@ -74,7 +79,8 @@ function clearControlsHideTimer() {
 }
 
 function syncControlsVisibility() {
-  if (shouldPinControlsVisible.value || playerHovering.value || playerFocused.value || !isPlaying.value) {
+  const keepVisibleForHover = playerHovering.value && !isFullscreen.value
+  if (shouldPinControlsVisible.value || keepVisibleForHover || playerFocused.value || !isPlaying.value) {
     controlsVisible.value = true
     clearControlsHideTimer()
     return
@@ -257,17 +263,25 @@ async function toggleFullscreen() {
     return
   }
 
+  const isLikelyIos = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+
+  if (isLikelyIos && typeof video.webkitEnterFullscreen === 'function') {
+    video.webkitEnterFullscreen()
+    return
+  }
+
   try {
     if (typeof container.requestFullscreen === 'function') {
       await container.requestFullscreen()
       return
     }
   } catch {
-    // Fall through to the iOS video fullscreen API.
+    // Fall through to video fullscreen when a browser blocks container fullscreen.
   }
 
-  if (typeof video.webkitEnterFullscreen === 'function') {
-    video.webkitEnterFullscreen()
+  if (typeof video.requestFullscreen === 'function') {
+    await video.requestFullscreen()
   }
 }
 
@@ -332,6 +346,44 @@ function handlePlayerInteraction() {
   revealControls()
 }
 
+function selectGroup(groupId: string | null) {
+  if (groupDragMoved.value) return
+  selectedGroupId.value = groupId
+}
+
+function startGroupDrag(event: PointerEvent) {
+  if (event.pointerType === 'touch') return
+  const scroller = groupScroller.value
+  if (!scroller) return
+  groupDragging.value = true
+  groupDragMoved.value = false
+  groupDragStartX = event.clientX
+  groupDragStartScrollLeft = scroller.scrollLeft
+  scroller.setPointerCapture(event.pointerId)
+}
+
+function moveGroupDrag(event: PointerEvent) {
+  if (!groupDragging.value || event.pointerType === 'touch') return
+  const scroller = groupScroller.value
+  if (!scroller) return
+  const deltaX = event.clientX - groupDragStartX
+  if (Math.abs(deltaX) > 4) {
+    groupDragMoved.value = true
+  }
+  scroller.scrollLeft = groupDragStartScrollLeft - deltaX
+}
+
+function endGroupDrag(event: PointerEvent) {
+  if (!groupDragging.value) return
+  groupDragging.value = false
+  if (groupScroller.value?.hasPointerCapture(event.pointerId)) {
+    groupScroller.value.releasePointerCapture(event.pointerId)
+  }
+  window.setTimeout(() => {
+    groupDragMoved.value = false
+  }, 0)
+}
+
 function handlePlayerFocusIn() {
   playerFocused.value = true
   revealControls()
@@ -351,7 +403,7 @@ watch(query, () => {
 })
 
 watch(selectedGroupId, loadLiveData)
-watch([shouldPinControlsVisible, isPlaying], syncControlsVisibility)
+watch([shouldPinControlsVisible, isPlaying, isFullscreen], syncControlsVisibility)
 
 onMounted(() => {
   document.addEventListener('fullscreenchange', syncFullscreenState)
@@ -397,9 +449,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)] xl:items-start">
+    <div class="grid gap-5 xl:grid-cols-[minmax(24rem,0.9fr)_minmax(0,1.1fr)] xl:items-start">
       <div
-        class="glass-panel border border-white/10 bg-black/40 transition"
+        class="player-shell glass-panel border border-white/10 bg-black/40 transition md:sticky md:top-6 xl:top-8"
         :class="isFullscreen ? 'overflow-visible rounded-none border-transparent shadow-none' : 'overflow-hidden rounded-[2rem] sm:rounded-[2.5rem]'"
         data-player-shell
         @mouseenter="handlePlayerPointerEnter"
@@ -491,14 +543,14 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="space-y-3 sm:space-y-4">
-              <p class="max-w-2xl text-sm leading-6 text-white/72">
+            <div class="space-y-3">
+              <p class="max-w-2xl text-sm leading-6 text-white/72 drop-shadow">
                 {{ playbackState === 'error' ? playbackError : playerStatusText }}
               </p>
 
-              <div class="flex flex-wrap items-center gap-3">
+              <div class="flex w-fit max-w-full items-center gap-3 rounded-full">
                 <button
-                  class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/14 bg-white/12 text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
+                  class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur-xl transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
                   :disabled="!selectedChannel || playbackState === 'loading'"
                   @click.stop="togglePlayback"
                 >
@@ -506,7 +558,7 @@ onBeforeUnmount(() => {
                   <Play v-else class="ml-0.5 h-5 w-5 sm:h-6 sm:w-6" />
                 </button>
                 <button
-                  class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/14 bg-white/12 text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
+                  class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur-xl transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
                   :disabled="!selectedChannel"
                   @click.stop="toggleMute"
                 >
@@ -514,14 +566,14 @@ onBeforeUnmount(() => {
                   <Volume2 v-else class="h-5 w-5 sm:h-6 sm:w-6" />
                 </button>
                 <button
-                  class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/14 bg-white/12 text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
+                  class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur-xl transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
                   :disabled="!selectedChannel"
                   @click.stop="toggleFullscreen"
                 >
                   <Maximize class="h-5 w-5 sm:h-6 sm:w-6" />
                 </button>
                 <div
-                  class="flex min-h-12 min-w-[11.5rem] flex-1 items-center rounded-full border border-white/12 bg-black/18 px-4 text-sm text-white/60 sm:min-h-14 sm:min-w-[13rem] sm:flex-none"
+                  class="hidden min-h-12 items-center rounded-full border border-white/14 bg-black/46 px-4 text-sm text-white/72 shadow-[0_12px_32px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:flex"
                 >
                   <LoaderCircle
                     v-if="playbackState === 'loading'"
@@ -548,8 +600,16 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="grid gap-4 pb-6 xl:content-start xl:pb-0">
-        <div class="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
-          <div class="flex min-w-max gap-3 xl:flex-wrap">
+        <div
+          ref="groupScroller"
+          class="chip-scroller -mx-1 cursor-grab overflow-x-auto overscroll-x-contain px-1 pb-1 active:cursor-grabbing [scrollbar-width:none]"
+          @pointerdown="startGroupDrag"
+          @pointermove="moveGroupDrag"
+          @pointerup="endGroupDrag"
+          @pointercancel="endGroupDrag"
+          @pointerleave="endGroupDrag"
+        >
+          <div class="flex min-w-max flex-nowrap gap-3">
             <button
               class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
               :class="
@@ -557,7 +617,7 @@ onBeforeUnmount(() => {
                   ? 'border-aurora/40 bg-aurora/18 text-white'
                   : 'border-white/10 bg-white/6 text-white/62'
               "
-              @click="selectedGroupId = null"
+              @click="selectGroup(null)"
             >
               All
             </button>
@@ -570,7 +630,7 @@ onBeforeUnmount(() => {
                   ? 'border-aurora/40 bg-aurora/18 text-white'
                   : 'border-white/10 bg-white/6 text-white/62'
               "
-              @click="selectedGroupId = group.id"
+              @click="selectGroup(group.id)"
             >
               {{ group.name }}
               <span class="ml-2 text-white/42">{{ group.channel_count }}</span>
@@ -578,8 +638,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="loading && channels.length === 0" class="grid gap-4">
-          <div v-for="index in 6" :key="index" class="glass-panel h-40 animate-pulse rounded-[2rem]"></div>
+        <div v-if="loading && channels.length === 0" class="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
+          <div v-for="index in 8" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
         </div>
 
         <div
@@ -594,37 +654,39 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-else class="grid gap-4">
+        <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
           <article
             v-for="channel in channels"
             :key="channel.id"
             tabindex="0"
-            class="tv-focus-card glass-panel flex min-h-44 cursor-pointer flex-col overflow-hidden rounded-[1.75rem] border transition sm:rounded-[2rem]"
+            class="tv-focus-card glass-panel group flex aspect-square min-h-0 cursor-pointer flex-col overflow-hidden rounded-[1.35rem] border transition sm:rounded-[1.6rem]"
             :class="
               selectedChannelId === channel.id
-                ? 'border-aurora/40 bg-white/10'
-                : 'border-white/10 bg-transparent hover:border-white/20'
+                ? 'border-aurora/50 bg-aurora/12 shadow-[0_0_0_1px_rgba(120,220,255,0.12)]'
+                : 'border-white/10 bg-white/[0.03] hover:border-white/20'
             "
             @click="selectChannel(channel)"
             @keydown.enter.prevent="selectChannel(channel)"
             @keydown.space.prevent="selectChannel(channel)"
           >
-            <div class="flex items-center gap-4 p-5 sm:p-6">
-              <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-[1.35rem] bg-white/8">
+            <div class="flex h-full flex-col p-3 sm:p-4">
+              <div class="flex min-h-0 flex-1 items-center justify-center rounded-[1.15rem] bg-white/7 p-3">
                 <img
                   v-if="channel.tvg_logo"
                   :src="channel.tvg_logo"
                   :alt="channel.name"
-                  class="max-h-12 max-w-[80%] object-contain"
+                  class="max-h-16 max-w-[86%] object-contain sm:max-h-20"
                   loading="lazy"
                 />
-                <Tv v-else class="h-7 w-7 text-white/62" />
+                <Tv v-else class="h-9 w-9 text-white/62 sm:h-10 sm:w-10" />
               </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-start justify-between gap-4">
+              <div class="mt-3 min-w-0">
+                <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <h3 class="line-clamp-2 text-lg font-semibold text-white">{{ channel.name }}</h3>
-                    <p class="mt-1 truncate text-sm text-white/46">{{ channel.group_title ?? 'Ungrouped' }}</p>
+                    <h3 class="line-clamp-2 text-sm font-semibold leading-5 text-white sm:text-base">
+                      {{ channel.name }}
+                    </h3>
+                    <p class="mt-1 truncate text-xs text-white/46">{{ channel.group_title ?? 'Ungrouped' }}</p>
                   </div>
                   <NSwitch
                     :value="channel.enabled"
@@ -633,7 +695,7 @@ onBeforeUnmount(() => {
                     @update:value="(value) => toggleChannel(channel, value)"
                   />
                 </div>
-                <p class="mt-4 line-clamp-2 break-all font-mono text-xs leading-5 text-white/40">
+                <p class="mt-2 truncate font-mono text-[10px] leading-4 text-white/22 opacity-0 transition group-hover:opacity-100">
                   {{ channel.stream_url }}
                 </p>
               </div>
@@ -644,3 +706,31 @@ onBeforeUnmount(() => {
     </div>
   </section>
 </template>
+
+<style scoped>
+.chip-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.player-shell:fullscreen {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.player-shell:fullscreen video {
+  border-radius: 0;
+}
+
+.player-shell:-webkit-full-screen {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.player-shell:-webkit-full-screen video {
+  border-radius: 0;
+}
+</style>
