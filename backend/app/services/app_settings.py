@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AppSetting, ImportJob, SourceConfig, VodSite
+from app.db.models import AppSetting, ImportJob, SourceConfig, SourceSnapshot, VodSite
 
 CURRENT_VOD_SITE_KEY = "current_vod_site_id"
 BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\s_-]+$")
@@ -128,22 +128,25 @@ async def get_current_vod_site_spider_analysis(db: AsyncSession) -> dict | None:
         return None
 
     raw_config = site.raw_config if isinstance(site.raw_config, dict) else {}
+    snapshot = await _latest_source_snapshot(db, site.source_config_id)
     latest_job = await _latest_successful_import_job(db, site.source_config_id)
+    root_config = snapshot.root_config if snapshot and isinstance(snapshot.root_config, dict) else None
     stored_text = " ".join(
         part
         for part in (
+            _safe_json(root_config) if root_config else "",
             _safe_json(raw_config),
-            latest_job.raw_preview if latest_job and latest_job.raw_preview else "",
+            "" if root_config else latest_job.raw_preview if latest_job and latest_job.raw_preview else "",
         )
         if part
     )
     api = (site.api or "").strip()
-    root_config_keys = _root_config_keys(raw_config, latest_job)
-    api_locations = _api_reference_locations(api, raw_config, latest_job)
-    spider_summary = _spider_field_summary(raw_config, latest_job)
+    root_config_keys = _root_config_keys(raw_config, latest_job, snapshot)
+    api_locations = _api_reference_locations(api, raw_config, latest_job, root_config, snapshot)
+    spider_summary = _spider_field_summary(raw_config, latest_job, snapshot)
     reference_type = _possible_reference_type(api, stored_text, spider_summary)
     reference_summary = _possible_reference_summary(api, reference_type, raw_config, spider_summary)
-    warnings = _spider_analysis_warnings(site, latest_job, spider_summary)
+    warnings = _spider_analysis_warnings(site, latest_job, snapshot, spider_summary)
     support_strategy = _spider_support_strategy(site, reference_type, spider_summary)
 
     return {
@@ -187,6 +190,17 @@ async def _latest_successful_import_job(db: AsyncSession, source_config_id: uuid
         select(ImportJob)
         .where(ImportJob.source_config_id == source_config_id, ImportJob.status == "success")
         .order_by(ImportJob.finished_at.desc().nullslast(), ImportJob.created_at.desc())
+        .limit(1)
+    )
+
+
+async def _latest_source_snapshot(db: AsyncSession, source_config_id: uuid.UUID | None) -> SourceSnapshot | None:
+    if source_config_id is None:
+        return None
+    return await db.scalar(
+        select(SourceSnapshot)
+        .where(SourceSnapshot.source_config_id == source_config_id)
+        .order_by(SourceSnapshot.created_at.desc(), SourceSnapshot.updated_at.desc())
         .limit(1)
     )
 
@@ -280,27 +294,55 @@ def _analysis_warnings(site: VodSite, ext_analysis: dict[str, Any]) -> list[str]
     return warnings
 
 
-def _root_config_keys(raw_config: dict[str, Any], latest_job: ImportJob | None) -> list[str]:
+def _root_config_keys(
+    raw_config: dict[str, Any],
+    latest_job: ImportJob | None,
+    snapshot: SourceSnapshot | None,
+) -> list[str]:
+    if snapshot and isinstance(snapshot.root_keys, list) and snapshot.root_keys:
+        return sorted(str(key) for key in snapshot.root_keys)
+    if snapshot and isinstance(snapshot.root_config, dict):
+        return sorted(str(key) for key in snapshot.root_config.keys())
     preview = latest_job.raw_preview if latest_job and latest_job.raw_preview else ""
-    root_keys = [key for key in ("spider", "wallpaper", "logo", "sites", "lives", "parses", "rules", "flags") if key in preview]
+    root_keys = [
+        key
+        for key in ("spider", "wallpaper", "logo", "sites", "lives", "parses", "rules", "proxy", "flags")
+        if key in preview
+    ]
     if root_keys:
         return sorted(set(root_keys))
     return sorted(str(key) for key in raw_config.keys())
 
 
-def _api_reference_locations(api: str, raw_config: dict[str, Any], latest_job: ImportJob | None) -> list[str]:
+def _api_reference_locations(
+    api: str,
+    raw_config: dict[str, Any],
+    latest_job: ImportJob | None,
+    root_config: dict[str, Any] | None,
+    snapshot: SourceSnapshot | None,
+) -> list[str]:
     if not api:
         return []
     locations: list[str] = []
+    if root_config:
+        _collect_api_locations(api, root_config, "source_snapshot.root_config", locations)
     for key, value in raw_config.items():
         if api in _safe_json(value):
             locations.append(f"site.raw_config.{key}")
-    if latest_job and latest_job.raw_preview and api in latest_job.raw_preview:
+    if not snapshot and latest_job and latest_job.raw_preview and api in latest_job.raw_preview:
         locations.append(f"import_job.raw_preview:{latest_job.id}")
-    return locations
+    return sorted(set(locations))
 
 
-def _spider_field_summary(raw_config: dict[str, Any], latest_job: ImportJob | None) -> str:
+def _spider_field_summary(
+    raw_config: dict[str, Any],
+    latest_job: ImportJob | None,
+    snapshot: SourceSnapshot | None,
+) -> str:
+    if snapshot and snapshot.spider_summary:
+        return snapshot.spider_summary
+    if snapshot and isinstance(snapshot.root_config, dict) and "spider" in snapshot.root_config:
+        return _short_summary(snapshot.root_config["spider"])
     if "spider" in raw_config:
         return _short_summary(raw_config["spider"])
     preview = latest_job.raw_preview if latest_job and latest_job.raw_preview else ""
@@ -312,6 +354,19 @@ def _spider_field_summary(raw_config: dict[str, Any], latest_job: ImportJob | No
     if index < 0:
         return ""
     return _truncate(preview[index : index + 300], 300)
+
+
+def _collect_api_locations(api: str, value: Any, path: str, locations: list[str]) -> None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            _collect_api_locations(api, nested, f"{path}.{key}", locations)
+        return
+    if isinstance(value, list):
+        for index, nested in enumerate(value):
+            _collect_api_locations(api, nested, f"{path}[{index}]", locations)
+        return
+    if api in str(value):
+        locations.append(path)
 
 
 def _possible_reference_type(api: str, stored_text: str, spider_summary: str) -> str:
@@ -384,14 +439,19 @@ def _spider_support_strategy(site: VodSite, reference_type: str, spider_summary:
     }
 
 
-def _spider_analysis_warnings(site: VodSite, latest_job: ImportJob | None, spider_summary: str) -> list[str]:
+def _spider_analysis_warnings(
+    site: VodSite,
+    latest_job: ImportJob | None,
+    snapshot: SourceSnapshot | None,
+    spider_summary: str,
+) -> list[str]:
     warnings = ["Analysis used stored database metadata only; no spider, API, or package URL was executed."]
     api = (site.api or "").strip().lower()
     if site.site_type == 3 or api.startswith("csp_"):
         warnings.append("Type 3/csp_ source requires a spider runtime for real browsing behavior.")
     if spider_summary:
-        warnings.append("A root spider reference appears in stored import metadata, but it was not downloaded.")
-    if latest_job and latest_job.raw_preview:
+        warnings.append("A root spider reference appears in stored snapshot metadata, but it was not downloaded or executed.")
+    if snapshot is None and latest_job and latest_job.raw_preview:
         warnings.append("Only ImportJob.raw_preview is stored, so root package analysis may be partial.")
     return warnings
 
