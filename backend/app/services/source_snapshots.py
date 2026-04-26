@@ -64,8 +64,20 @@ def _snapshot_values(import_job: ImportJob, content: bytes) -> dict[str, Any]:
     root_config: dict[str, Any] | None = None
     recovered_format: str | None = None
 
-    recovered = recover_json_config(content)
-    if isinstance(recovered, dict):
+    text = content.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")
+    if text.lstrip("\ufeff\r\n\t ").startswith("#EXTM3U"):
+        serialized = json.dumps({"raw_m3u": text}, ensure_ascii=False, separators=(",", ":"))
+        if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
+            root_config = {"raw_m3u": text}
+            recovered_format = "m3u_text"
+        else:
+            warnings.append("Recovered M3U text exceeded 2MB snapshot limit and was not stored.")
+            recovered_format = "m3u_text_too_large"
+
+    recovered = None if root_config is not None else recover_json_config(content)
+    if root_config is not None:
+        pass
+    elif isinstance(recovered, dict):
         serialized = json.dumps(recovered, ensure_ascii=False, separators=(",", ":"))
         if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
             root_config = recovered

@@ -46,5 +46,6 @@ class SourceConfigRead(SourceConfigBase):
     last_success_at: datetime | None = None
     last_error: str | None = None
     vod_site_count: int = 0
+    live_channel_count: int = 0
     created_at: datetime
     updated_at: datetime

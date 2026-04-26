@@ -27,6 +27,7 @@ import {
 import {
   createSourceConfig,
   deleteSourceConfig,
+  extractLiveChannels,
   extractVodSites,
   getCurrentVodSite,
   importSourceConfig,
@@ -36,6 +37,7 @@ import {
   updateVodSite,
   updateSourceConfig,
   type ImportJob,
+  type LiveExtractionStats,
   type CurrentVodSite,
   type SourceConfig,
   type SourceConfigPayload,
@@ -50,7 +52,9 @@ const loading = ref(false)
 const saving = ref(false)
 const importingIds = ref<Set<string>>(new Set())
 const extractingIds = ref<Set<string>>(new Set())
+const extractingLiveIds = ref<Set<string>>(new Set())
 const latestJob = ref<ImportJob | null>(null)
+const latestLiveExtraction = ref<LiveExtractionStats | null>(null)
 const currentVodSite = ref<CurrentVodSite | null>(null)
 const settingCurrentIds = ref<Set<string>>(new Set())
 const siteModalOpen = ref(false)
@@ -208,6 +212,21 @@ async function extractSites(source: SourceConfig) {
   }
 }
 
+async function extractLive(source: SourceConfig) {
+  extractingLiveIds.value = new Set(extractingLiveIds.value).add(source.id)
+  try {
+    latestLiveExtraction.value = await extractLiveChannels(source.id)
+    await loadSources()
+    message.success(`Extracted ${latestLiveExtraction.value.channels_count} live channels`)
+  } catch (error) {
+    showError(error, 'Unable to extract live channels')
+  } finally {
+    const next = new Set(extractingLiveIds.value)
+    next.delete(source.id)
+    extractingLiveIds.value = next
+  }
+}
+
 async function openSites(source: SourceConfig) {
   selectedSource.value = source
   siteModalOpen.value = true
@@ -310,6 +329,10 @@ function sourceCurrentLabel(source: SourceConfig) {
   return `${currentVodSite.value.site_name} / ${currentVodSite.value.site_key}`
 }
 
+function supportsLiveExtraction(source: SourceConfig) {
+  return ['m3u', 'm3u8', 'txt'].includes(source.source_type)
+}
+
 onMounted(async () => {
   await Promise.all([loadSources(), loadCurrentVodSite()])
 })
@@ -407,6 +430,40 @@ onMounted(async () => {
       >{{ latestJob.raw_preview }}</pre>
     </article>
 
+    <article v-if="latestLiveExtraction" class="glass-panel rounded-[2rem] p-6 sm:p-7">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.28em] text-white/42">Latest Live Extraction</p>
+          <h2 class="mt-3 text-2xl font-semibold text-white">
+            {{ latestLiveExtraction.channels_count }} channels
+          </h2>
+        </div>
+        <div class="grid gap-3 text-sm text-white/62 sm:grid-cols-3 lg:min-w-[34rem]">
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Groups</span>
+            <span class="mt-1 block text-white">{{ latestLiveExtraction.groups_count }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Created</span>
+            <span class="mt-1 block text-white">{{ latestLiveExtraction.created_count }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Updated</span>
+            <span class="mt-1 block text-white">{{ latestLiveExtraction.updated_count }}</span>
+          </div>
+        </div>
+      </div>
+      <div v-if="latestLiveExtraction.warnings.length" class="mt-5 grid gap-2">
+        <p
+          v-for="warning in latestLiveExtraction.warnings"
+          :key="warning"
+          class="rounded-2xl border border-white/10 bg-white/6 p-4 text-sm leading-6 text-white/66"
+        >
+          {{ warning }}
+        </p>
+      </div>
+    </article>
+
     <div v-if="loading && sources.length === 0" class="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
       <div v-for="index in 3" :key="index" class="glass-panel min-h-64 animate-pulse rounded-[2rem] p-6">
         <div class="h-4 w-24 rounded-full bg-white/12"></div>
@@ -464,6 +521,10 @@ onMounted(async () => {
             <span>VOD sites</span>
             <span class="text-white/72">{{ source.vod_site_count }}</span>
           </div>
+          <div class="flex justify-between gap-4">
+            <span>Live channels</span>
+            <span class="text-white/72">{{ source.live_channel_count }}</span>
+          </div>
           <div v-if="sourceCurrentLabel(source)" class="rounded-2xl border border-aurora/25 bg-aurora/10 p-3 text-white">
             <span class="block text-xs uppercase tracking-[0.18em] text-white/48">Current</span>
             <span class="mt-1 block text-sm">{{ sourceCurrentLabel(source) }}</span>
@@ -491,6 +552,16 @@ onMounted(async () => {
           >
             <template #icon><DatabaseZap class="h-4 w-4" /></template>
             Extract Sites
+          </NButton>
+          <NButton
+            v-if="supportsLiveExtraction(source)"
+            round
+            secondary
+            :loading="extractingLiveIds.has(source.id)"
+            @click="extractLive(source)"
+          >
+            <template #icon><DatabaseZap class="h-4 w-4" /></template>
+            Extract Live
           </NButton>
           <NButton round secondary :disabled="source.vod_site_count === 0" @click="openSites(source)">
             <template #icon><Rows3 class="h-4 w-4" /></template>

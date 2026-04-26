@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.schemas.source_config import SourceConfigCreate, SourceConfigRead, SourceConfigUpdate
 from app.schemas.import_job import ImportJobRead
+from app.schemas.live import LiveExtractionStats
 from app.schemas.source_snapshot import SourceSnapshotRead
 from app.schemas.vod_site import VodSiteRead
-from app.services import import_jobs, source_configs, source_snapshots, vod_sites
+from app.services import import_jobs, live_m3u, source_configs, source_snapshots, vod_sites
 
 router = APIRouter(prefix="/configs", tags=["source-configs"])
 
@@ -54,6 +55,11 @@ async def import_config(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 @router.post("/{config_id}/extract-sites", response_model=list[VodSiteRead])
 async def extract_sites(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[VodSiteRead]:
     return await vod_sites.extract_sites_for_source(db, config_id)
+
+
+@router.post("/{config_id}/extract-live-channels", response_model=LiveExtractionStats)
+async def extract_live_channels(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> dict:
+    return await live_m3u.extract_live_channels(db, config_id)
 
 
 @router.get("/{config_id}/snapshot/latest", response_model=SourceSnapshotRead)

@@ -12,6 +12,7 @@ export type SourceConfig = {
   last_success_at: string | null
   last_error: string | null
   vod_site_count: number
+  live_channel_count: number
   created_at: string
   updated_at: string
 }
@@ -68,6 +69,42 @@ export type VodSite = {
   enabled: boolean
   sort_order: number
   analysis_note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type LiveExtractionStats = {
+  groups_count: number
+  channels_count: number
+  created_count: number
+  updated_count: number
+  disabled_missing_count: number
+  warnings: string[]
+}
+
+export type LiveChannelGroup = {
+  id: string
+  source_config_id: string
+  name: string
+  sort_order: number
+  channel_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type LiveChannel = {
+  id: string
+  source_config_id: string
+  group_id: string | null
+  name: string
+  tvg_id: string | null
+  tvg_name: string | null
+  tvg_logo: string | null
+  group_title: string | null
+  stream_url: string
+  raw_extinf: Record<string, unknown>
+  enabled: boolean
+  sort_order: number
   created_at: string
   updated_at: string
 }
@@ -231,6 +268,31 @@ export function getImportJob(id: string): Promise<ImportJob> {
 export function extractVodSites(sourceConfigId: string): Promise<VodSite[]> {
   return apiRequest<VodSite[]>(`/configs/${sourceConfigId}/extract-sites`, {
     method: 'POST',
+  })
+}
+
+export function extractLiveChannels(sourceConfigId: string): Promise<LiveExtractionStats> {
+  return apiRequest<LiveExtractionStats>(`/configs/${sourceConfigId}/extract-live-channels`, {
+    method: 'POST',
+  })
+}
+
+export function listLiveGroups(): Promise<LiveChannelGroup[]> {
+  return apiRequest<LiveChannelGroup[]>('/live/groups')
+}
+
+export function listLiveChannels(params: { group_id?: string; q?: string } = {}): Promise<LiveChannel[]> {
+  const query = new URLSearchParams()
+  if (params.group_id) query.set('group_id', params.group_id)
+  if (params.q) query.set('q', params.q)
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return apiRequest<LiveChannel[]>(`/live/channels${suffix}`)
+}
+
+export function updateLiveChannel(id: string, enabled: boolean): Promise<LiveChannel> {
+  return apiRequest<LiveChannel>(`/live/channels/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
   })
 }
 

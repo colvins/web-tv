@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 
@@ -23,6 +25,11 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     import_jobs: Mapped[list["ImportJob"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
+    live_channel_groups: Mapped[list["LiveChannelGroup"]] = relationship(
+        back_populates="source_config",
+        cascade="all, delete-orphan",
+    )
+    live_channels: Mapped[list["LiveChannel"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     spider_artifacts: Mapped[list["SpiderArtifact"]] = relationship(
         back_populates="source_config",
         cascade="all, delete-orphan",
@@ -251,30 +258,35 @@ class LiveSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     refresh_interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=3600)
     metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
 
-    channels: Mapped[list["LiveChannel"]] = relationship(back_populates="source", cascade="all, delete-orphan")
-
 
 class LiveChannel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "live_channels"
 
-    live_source_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("live_sources.id", ondelete="CASCADE"),
-        nullable=False,
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("live_channel_groups.id", ondelete="SET NULL"),
         index=True,
     )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    group_name: Mapped[str | None] = mapped_column(String(120), index=True)
-    logo_url: Mapped[str | None] = mapped_column(Text)
+    tvg_id: Mapped[str | None] = mapped_column(String(180), index=True)
+    tvg_name: Mapped[str | None] = mapped_column(String(240), index=True)
+    tvg_logo: Mapped[str | None] = mapped_column(Text)
+    group_title: Mapped[str | None] = mapped_column(String(160), index=True)
     stream_url: Mapped[str] = mapped_column(Text, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    raw_extinf: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    metadata_: Mapped[JsonDict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    source: Mapped[LiveSource] = relationship(back_populates="channels")
+    source_config: Mapped[SourceConfig] = relationship(back_populates="live_channels")
+    group: Mapped[LiveChannelGroup | None] = relationship(back_populates="channels")
 
     __table_args__ = (
-        UniqueConstraint("live_source_id", "name", "stream_url", name="uq_live_channels_source_name_stream"),
-        Index("ix_live_channels_group_sort", "group_name", "sort_order"),
+        UniqueConstraint("source_config_id", "stream_url", name="uq_live_channels_source_stream"),
+        Index("ix_live_channels_source_group_sort", "source_config_id", "group_id", "sort_order"),
+        Index("ix_live_channels_enabled_sort", "enabled", "sort_order"),
     )
 
 
@@ -289,6 +301,27 @@ class ParseApi(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     params: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
 
     __table_args__ = (Index("ix_parse_apis_enabled_priority", "enabled", "priority"),)
+
+
+class LiveChannelGroup(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "live_channel_groups"
+
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    channel_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    source_config: Mapped[SourceConfig] = relationship(back_populates="live_channel_groups")
+    channels: Mapped[list["LiveChannel"]] = relationship(back_populates="group")
+
+    __table_args__ = (
+        UniqueConstraint("source_config_id", "name", name="uq_live_channel_groups_source_name"),
+        Index("ix_live_channel_groups_source_sort", "source_config_id", "sort_order"),
+    )
 
 
 class VodCache(UUIDPrimaryKeyMixin, TimestampMixin, Base):
