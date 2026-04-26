@@ -10,7 +10,7 @@ defineProps<{
 
 <template>
   <div
-    class="player-shell glass-panel border border-white/10 bg-black/40 transition md:sticky md:top-6 xl:top-8"
+    class="player-shell glass-panel z-30 mx-auto w-full max-w-5xl border border-white/12 bg-black/72 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition md:sticky md:top-4 lg:top-6 xl:top-8"
     :class="
       playback.isFullscreen.value
         ? 'overflow-visible rounded-none border-transparent shadow-none'

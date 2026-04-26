@@ -162,7 +162,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="grid gap-5 pb-24 sm:gap-6 sm:pb-28">
     <div class="glass-panel rounded-[2rem] p-5 sm:rounded-[2.5rem] sm:p-8">
-      <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+      <div>
         <div>
           <p class="text-sm uppercase tracking-[0.28em] text-white/42">Live TV</p>
           <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl xl:text-6xl">{{ selectedGroupName }}</h2>
@@ -170,7 +170,14 @@ onBeforeUnmount(() => {
             Browse imported channels and play a selected stream directly in this page.
           </p>
         </div>
-        <div class="flex w-full flex-col gap-3 sm:flex-row xl:w-auto">
+      </div>
+    </div>
+
+    <LivePlayer :playback="playback" />
+
+    <div class="grid gap-4 pb-6 xl:content-start xl:pb-0">
+      <div class="glass-panel rounded-[1.5rem] p-3 sm:rounded-[2rem] sm:p-4">
+        <div class="flex w-full flex-col gap-3 sm:flex-row">
           <NInput
             v-model:value="query"
             round
@@ -186,78 +193,72 @@ onBeforeUnmount(() => {
           </NButton>
         </div>
       </div>
-    </div>
 
-    <div class="grid gap-5 xl:grid-cols-[minmax(24rem,0.9fr)_minmax(0,1.1fr)] xl:items-start">
-      <LivePlayer :playback="playback" />
-
-      <div class="grid gap-4 pb-6 xl:content-start xl:pb-0">
-        <div
-          ref="groupScroller"
-          class="chip-scroller -mx-1 cursor-grab overflow-x-auto overscroll-x-contain px-1 pb-1 active:cursor-grabbing [scrollbar-width:none]"
-          @pointerdown="startGroupDrag"
-          @pointermove="moveGroupDrag"
-          @pointerup="resetGroupDrag"
-          @pointercancel="resetGroupDrag"
-          @pointerleave="resetGroupDrag"
-          @lostpointercapture="resetGroupDrag"
-        >
-          <div class="flex min-w-max flex-nowrap gap-3">
-            <button
-              class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
-              :class="
-                selectedGroupId === null
-                  ? 'border-aurora/40 bg-aurora/18 text-white'
-                  : 'border-white/10 bg-white/6 text-white/62'
-              "
-              @click="selectGroup(null)"
-            >
-              All
-            </button>
-            <button
-              v-for="group in groups"
-              :key="group.id"
-              class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
-              :class="
-                selectedGroupId === group.id
-                  ? 'border-aurora/40 bg-aurora/18 text-white'
-                  : 'border-white/10 bg-white/6 text-white/62'
-              "
-              @click="selectGroup(group.id)"
-            >
-              {{ group.name }}
-              <span class="ml-2 text-white/42">{{ group.channel_count }}</span>
-            </button>
-          </div>
+      <div
+        ref="groupScroller"
+        class="chip-scroller -mx-1 cursor-grab overflow-x-auto overscroll-x-contain px-1 pb-1 active:cursor-grabbing [scrollbar-width:none]"
+        @pointerdown="startGroupDrag"
+        @pointermove="moveGroupDrag"
+        @pointerup="resetGroupDrag"
+        @pointercancel="resetGroupDrag"
+        @pointerleave="resetGroupDrag"
+        @lostpointercapture="resetGroupDrag"
+      >
+        <div class="flex min-w-max flex-nowrap gap-3">
+          <button
+            class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
+            :class="
+              selectedGroupId === null
+                ? 'border-aurora/40 bg-aurora/18 text-white'
+                : 'border-white/10 bg-white/6 text-white/62'
+            "
+            @click="selectGroup(null)"
+          >
+            All
+          </button>
+          <button
+            v-for="group in groups"
+            :key="group.id"
+            class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
+            :class="
+              selectedGroupId === group.id
+                ? 'border-aurora/40 bg-aurora/18 text-white'
+                : 'border-white/10 bg-white/6 text-white/62'
+            "
+            @click="selectGroup(group.id)"
+          >
+            {{ group.name }}
+            <span class="ml-2 text-white/42">{{ group.channel_count }}</span>
+          </button>
         </div>
+      </div>
 
-        <div v-if="loading && channels.length === 0" class="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
-          <div v-for="index in 8" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
-        </div>
+      <div v-if="loading && channels.length === 0" class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <div v-for="index in 12" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
+      </div>
 
-        <div
-          v-else-if="channels.length === 0"
-          class="glass-panel flex min-h-72 items-end rounded-[2rem] p-6 sm:rounded-[2.5rem] sm:p-10"
-        >
-          <div>
-            <p class="text-sm uppercase tracking-[0.28em] text-white/42">No Channels</p>
-            <h2 class="mt-3 max-w-2xl text-2xl font-semibold sm:text-5xl">
-              Import and extract a live M3U source first.
-            </h2>
-          </div>
+      <div
+        v-else-if="channels.length === 0"
+        class="glass-panel flex min-h-72 items-end rounded-[2rem] p-6 sm:rounded-[2.5rem] sm:p-10"
+      >
+        <div>
+          <p class="text-sm uppercase tracking-[0.28em] text-white/42">No Channels</p>
+          <h2 class="mt-3 max-w-2xl text-2xl font-semibold sm:text-5xl">
+            Import and extract a live M3U source first.
+          </h2>
         </div>
+      </div>
 
-        <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
-          <LiveChannelCard
-            v-for="channel in channels"
-            :key="channel.id"
-            :channel="channel"
-            :selected="playback.selectedChannelId.value === channel.id"
-            :toggling="togglingIds.has(channel.id)"
-            @select="selectChannel"
-            @toggle="toggleChannel"
-          />
-        </div>
+      <div v-else class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+        <LiveChannelCard
+          v-for="channel in channels"
+          :key="channel.id"
+          :channel="channel"
+          :selected="playback.selectedChannelId.value === channel.id"
+          :toggling="togglingIds.has(channel.id)"
+          @select="selectChannel"
+          @toggle="toggleChannel"
+        />
       </div>
     </div>
   </section>
