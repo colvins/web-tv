@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AppSetting, SourceConfig, VodSite
+from app.db.models import AppSetting, ImportJob, SourceConfig, VodSite
 
 CURRENT_VOD_SITE_KEY = "current_vod_site_id"
 BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\s_-]+$")
@@ -120,6 +120,51 @@ async def get_current_vod_site_analysis(db: AsyncSession) -> dict | None:
     }
 
 
+async def get_current_vod_site_spider_analysis(db: AsyncSession) -> dict | None:
+    site = await get_current_vod_site(db)
+    if site is None or not site.enabled:
+        return None
+    if site.source_config is None or not site.source_config.enabled:
+        return None
+
+    raw_config = site.raw_config if isinstance(site.raw_config, dict) else {}
+    latest_job = await _latest_successful_import_job(db, site.source_config_id)
+    stored_text = " ".join(
+        part
+        for part in (
+            _safe_json(raw_config),
+            latest_job.raw_preview if latest_job and latest_job.raw_preview else "",
+        )
+        if part
+    )
+    api = (site.api or "").strip()
+    root_config_keys = _root_config_keys(raw_config, latest_job)
+    api_locations = _api_reference_locations(api, raw_config, latest_job)
+    spider_summary = _spider_field_summary(raw_config, latest_job)
+    reference_type = _possible_reference_type(api, stored_text, spider_summary)
+    reference_summary = _possible_reference_summary(api, reference_type, raw_config, spider_summary)
+    warnings = _spider_analysis_warnings(site, latest_job, spider_summary)
+    support_strategy = _spider_support_strategy(site, reference_type, spider_summary)
+
+    return {
+        "site_id": site.id,
+        "site_key": site.site_key,
+        "site_name": site.site_name,
+        "site_type": site.site_type,
+        "api": site.api,
+        "source_name": site.source_config.name,
+        "root_config_keys": root_config_keys,
+        "spider_field_present": bool(spider_summary),
+        "spider_field_summary": _truncate(spider_summary, 300),
+        "api_reference_found": bool(api_locations),
+        "api_reference_locations": api_locations,
+        "possible_reference_type": reference_type,
+        "possible_reference_summary": _truncate(reference_summary, 500),
+        "support_strategy": support_strategy,
+        "warnings": warnings,
+    }
+
+
 async def _get_site_with_source(db: AsyncSession, site_id: uuid.UUID) -> VodSite | None:
     result = await db.execute(
         select(VodSite, SourceConfig)
@@ -133,6 +178,17 @@ async def _get_site_with_source(db: AsyncSession, site_id: uuid.UUID) -> VodSite
     site, source_config = row
     site.source_config = source_config
     return site
+
+
+async def _latest_successful_import_job(db: AsyncSession, source_config_id: uuid.UUID | None) -> ImportJob | None:
+    if source_config_id is None:
+        return None
+    return await db.scalar(
+        select(ImportJob)
+        .where(ImportJob.source_config_id == source_config_id, ImportJob.status == "success")
+        .order_by(ImportJob.finished_at.desc().nullslast(), ImportJob.created_at.desc())
+        .limit(1)
+    )
 
 
 def _known_flags(raw_config: dict[str, Any]) -> dict[str, Any]:
@@ -224,6 +280,122 @@ def _analysis_warnings(site: VodSite, ext_analysis: dict[str, Any]) -> list[str]
     return warnings
 
 
+def _root_config_keys(raw_config: dict[str, Any], latest_job: ImportJob | None) -> list[str]:
+    preview = latest_job.raw_preview if latest_job and latest_job.raw_preview else ""
+    root_keys = [key for key in ("spider", "wallpaper", "logo", "sites", "lives", "parses", "rules", "flags") if key in preview]
+    if root_keys:
+        return sorted(set(root_keys))
+    return sorted(str(key) for key in raw_config.keys())
+
+
+def _api_reference_locations(api: str, raw_config: dict[str, Any], latest_job: ImportJob | None) -> list[str]:
+    if not api:
+        return []
+    locations: list[str] = []
+    for key, value in raw_config.items():
+        if api in _safe_json(value):
+            locations.append(f"site.raw_config.{key}")
+    if latest_job and latest_job.raw_preview and api in latest_job.raw_preview:
+        locations.append(f"import_job.raw_preview:{latest_job.id}")
+    return locations
+
+
+def _spider_field_summary(raw_config: dict[str, Any], latest_job: ImportJob | None) -> str:
+    if "spider" in raw_config:
+        return _short_summary(raw_config["spider"])
+    preview = latest_job.raw_preview if latest_job and latest_job.raw_preview else ""
+    marker = '"spider"'
+    index = preview.find(marker)
+    if index < 0:
+        marker = "spider"
+        index = preview.find(marker)
+    if index < 0:
+        return ""
+    return _truncate(preview[index : index + 300], 300)
+
+
+def _possible_reference_type(api: str, stored_text: str, spider_summary: str) -> str:
+    lowered_api = api.lower()
+    lowered_text = stored_text.lower()
+    lowered_spider = spider_summary.lower()
+    joined = " ".join((lowered_api, lowered_text, lowered_spider))
+
+    if lowered_api.endswith(".js") or ".js" in lowered_spider:
+        return "js_reference"
+    if lowered_api.endswith(".py") or ".py" in lowered_spider:
+        return "py_reference"
+    if ".jar" in joined or ";md5;" in joined:
+        return "jar_reference"
+    if _looks_like_url(api) or "http://" in lowered_spider or "https://" in lowered_spider:
+        return "remote_url_reference"
+    if api and api in stored_text:
+        return "inline_name_only"
+    if not api:
+        return "none"
+    return "unknown"
+
+
+def _possible_reference_summary(
+    api: str,
+    reference_type: str,
+    raw_config: dict[str, Any],
+    spider_summary: str,
+) -> str:
+    if spider_summary:
+        return spider_summary
+    if api and raw_config:
+        return f"API name {api!r} is present in the stored site raw_config only."
+    if reference_type == "none":
+        return "No API or spider reference was found in stored metadata."
+    return "No concrete spider package URL or executable body is stored for this site."
+
+
+def _spider_support_strategy(site: VodSite, reference_type: str, spider_summary: str) -> dict[str, str]:
+    api = (site.api or "").strip()
+    lowered_api = api.lower()
+    if not api:
+        return {
+            "level": "unsupported_unknown",
+            "reason": "The selected site has no API reference to analyze.",
+            "recommended_next_step": "Keep this site as metadata until a supported adapter target is known.",
+        }
+    if lowered_api.endswith(".js") or reference_type == "js_reference":
+        return {
+            "level": "possible_js_runtime",
+            "reason": "The stored metadata points to a JavaScript-style reference, but it was not executed.",
+            "recommended_next_step": "Define a sandboxed JavaScript adapter policy before any runtime support.",
+        }
+    if site.site_type in {0, 1} and _looks_like_url(api):
+        return {
+            "level": "possible_http_adapter",
+            "reason": "The site type and API look like a future HTTP adapter candidate.",
+            "recommended_next_step": "Add a read-only HTTP adapter contract before fetching remote VOD metadata.",
+        }
+    if site.site_type == 3 or lowered_api.startswith("csp_") or spider_summary:
+        return {
+            "level": "needs_spider_runtime",
+            "reason": "The site references CatVod spider behavior and cannot be browsed by metadata inspection alone.",
+            "recommended_next_step": "Design a sandboxed spider runtime boundary before enabling this source.",
+        }
+    return {
+        "level": "unsupported_unknown",
+        "reason": "Stored metadata does not identify a supported runtime or HTTP adapter.",
+        "recommended_next_step": "Collect more source metadata through existing imports before adding browsing support.",
+    }
+
+
+def _spider_analysis_warnings(site: VodSite, latest_job: ImportJob | None, spider_summary: str) -> list[str]:
+    warnings = ["Analysis used stored database metadata only; no spider, API, or package URL was executed."]
+    api = (site.api or "").strip().lower()
+    if site.site_type == 3 or api.startswith("csp_"):
+        warnings.append("Type 3/csp_ source requires a spider runtime for real browsing behavior.")
+    if spider_summary:
+        warnings.append("A root spider reference appears in stored import metadata, but it was not downloaded.")
+    if latest_job and latest_job.raw_preview:
+        warnings.append("Only ImportJob.raw_preview is stored, so root package analysis may be partial.")
+    return warnings
+
+
 def _value_type(value: Any) -> str:
     if isinstance(value, dict):
         return "object"
@@ -241,9 +413,13 @@ def _value_type(value: Any) -> str:
 def _short_summary(value: Any) -> str:
     text = value if isinstance(value, str) else _safe_json(value)
     compact = " ".join(text.split())
-    if len(compact) <= 300:
-        return compact
-    return f"{compact[:297]}..."
+    return _truncate(compact, 300)
+
+
+def _truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 3]}..."
 
 
 def _safe_json(value: Any) -> str:

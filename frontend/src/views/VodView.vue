@@ -7,8 +7,10 @@ import { RouterLink } from 'vue-router'
 import {
   getCurrentVodSite,
   getCurrentVodSiteAnalysis,
+  getCurrentVodSiteSpiderAnalysis,
   type CurrentVodSite,
   type CurrentVodSiteAnalysis,
+  type CurrentVodSiteSpiderAnalysis,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 
@@ -16,6 +18,8 @@ const message = useMessage()
 const currentSite = ref<CurrentVodSite | null>(null)
 const analysis = ref<CurrentVodSiteAnalysis | null>(null)
 const analysisError = ref<string | null>(null)
+const spiderAnalysis = ref<CurrentVodSiteSpiderAnalysis | null>(null)
+const spiderAnalysisError = ref<string | null>(null)
 const loading = ref(false)
 
 const knownFlagItems = computed(() =>
@@ -31,6 +35,8 @@ async function loadCurrentSite() {
   loading.value = true
   analysis.value = null
   analysisError.value = null
+  spiderAnalysis.value = null
+  spiderAnalysisError.value = null
   try {
     currentSite.value = await getCurrentVodSite()
     if (currentSite.value) {
@@ -44,6 +50,17 @@ async function loadCurrentSite() {
       } catch (error) {
         analysisError.value =
           error instanceof ApiError ? error.message : 'Unable to load compatibility analysis'
+      }
+      try {
+        const result = await getCurrentVodSiteSpiderAnalysis()
+        if (result) {
+          spiderAnalysis.value = result
+        } else {
+          spiderAnalysisError.value = 'Spider reference analysis is unavailable for the selected site.'
+        }
+      } catch (error) {
+        spiderAnalysisError.value =
+          error instanceof ApiError ? error.message : 'Unable to load spider reference analysis'
       }
     }
   } catch (error) {
@@ -61,7 +78,12 @@ function formatFlagValue(value: unknown): string {
   return String(value)
 }
 
-function supportLevelLabel(level: CurrentVodSiteAnalysis['support_assessment']['level']) {
+function supportLevelLabel(
+  level:
+    | CurrentVodSiteAnalysis['support_assessment']['level']
+    | CurrentVodSiteSpiderAnalysis['support_strategy']['level']
+    | CurrentVodSiteSpiderAnalysis['possible_reference_type'],
+) {
   return level.replaceAll('_', ' ')
 }
 
@@ -225,6 +247,113 @@ onMounted(loadCurrentSite)
         <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-3">
           <p class="text-sm text-white/52">Loading compatibility analysis...</p>
         </div>
+      </div>
+    </article>
+
+    <article v-if="currentSite" class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.26em] text-white/42">Spider Reference</p>
+          <h3 class="mt-3 text-2xl font-semibold text-white sm:text-3xl">
+            {{
+              spiderAnalysis
+                ? supportLevelLabel(spiderAnalysis.possible_reference_type)
+                : 'Stored source metadata'
+            }}
+          </h3>
+        </div>
+        <div
+          v-if="spiderAnalysis"
+          class="rounded-full border border-white/10 bg-white/8 px-4 py-2 text-sm capitalize text-white/78"
+        >
+          {{ supportLevelLabel(spiderAnalysis.support_strategy.level) }}
+        </div>
+      </div>
+
+      <p
+        v-if="spiderAnalysisError"
+        class="mt-5 rounded-3xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm text-amber-100"
+      >
+        {{ spiderAnalysisError }}
+      </p>
+
+      <div v-else-if="spiderAnalysis" class="mt-7 grid gap-4 lg:grid-cols-3">
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-2">
+          <p class="text-sm text-white/42">Support strategy</p>
+          <p class="mt-3 text-lg font-semibold text-white">{{ spiderAnalysis.support_strategy.reason }}</p>
+          <p class="mt-3 text-sm leading-6 text-white/58">
+            {{ spiderAnalysis.support_strategy.recommended_next_step }}
+          </p>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Reference type</p>
+          <p class="mt-3 text-lg font-semibold capitalize text-white">
+            {{ supportLevelLabel(spiderAnalysis.possible_reference_type) }}
+          </p>
+          <p class="mt-2 text-sm text-white/54">
+            API reference found: {{ spiderAnalysis.api_reference_found ? 'Yes' : 'No' }}
+          </p>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-2">
+          <p class="text-sm text-white/42">Spider field summary</p>
+          <p class="mt-3 break-all font-mono text-xs leading-5 text-white/64">
+            {{ spiderAnalysis.spider_field_summary || 'No root spider field found in stored metadata.' }}
+          </p>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+          <p class="text-sm text-white/42">Root config keys</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span
+              v-for="key in spiderAnalysis.root_config_keys"
+              :key="key"
+              class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72"
+            >
+              {{ key }}
+            </span>
+            <span v-if="spiderAnalysis.root_config_keys.length === 0" class="text-sm text-white/52">
+              No keys found
+            </span>
+          </div>
+        </div>
+
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5 lg:col-span-3">
+          <p class="text-sm text-white/42">API reference locations</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span
+              v-for="location in spiderAnalysis.api_reference_locations"
+              :key="location"
+              class="rounded-full bg-white/8 px-3 py-1 text-xs text-white/72"
+            >
+              {{ location }}
+            </span>
+            <span v-if="spiderAnalysis.api_reference_locations.length === 0" class="text-sm text-white/52">
+              No stored reference locations found
+            </span>
+          </div>
+          <p
+            v-if="spiderAnalysis.possible_reference_summary"
+            class="mt-4 break-all rounded-2xl bg-white/6 p-3 font-mono text-xs leading-5 text-white/58"
+          >
+            {{ spiderAnalysis.possible_reference_summary }}
+          </p>
+        </div>
+
+        <div
+          v-if="spiderAnalysis.warnings.length"
+          class="rounded-[1.5rem] border border-amber-300/18 bg-amber-300/10 p-5 lg:col-span-3"
+        >
+          <p class="text-sm text-amber-100/70">Warnings</p>
+          <ul class="mt-3 grid gap-2 text-sm text-amber-50/82">
+            <li v-for="warning in spiderAnalysis.warnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
+      </div>
+
+      <div v-else class="mt-7 rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+        <p class="text-sm text-white/52">Loading spider reference analysis...</p>
       </div>
     </article>
   </section>

@@ -110,6 +110,40 @@ export type CurrentVodSiteAnalysis = {
   warnings: string[]
 }
 
+export type CurrentVodSiteSpiderAnalysis = {
+  site_id: string
+  site_key: string
+  site_name: string
+  site_type: number | null
+  api: string | null
+  source_name: string | null
+  root_config_keys: string[]
+  spider_field_present: boolean
+  spider_field_summary: string
+  api_reference_found: boolean
+  api_reference_locations: string[]
+  possible_reference_type:
+    | 'none'
+    | 'jar_reference'
+    | 'js_reference'
+    | 'py_reference'
+    | 'remote_url_reference'
+    | 'inline_name_only'
+    | 'unknown'
+  possible_reference_summary: string
+  support_strategy: {
+    level:
+      | 'unsupported_unknown'
+      | 'needs_spider_runtime'
+      | 'possible_js_runtime'
+      | 'possible_http_adapter'
+      | 'metadata_only'
+    reason: string
+    recommended_next_step: string
+  }
+  warnings: string[]
+}
+
 export function listSourceConfigs(): Promise<SourceConfig[]> {
   return apiRequest<SourceConfig[]>('/configs')
 }
@@ -174,6 +208,10 @@ export function getCurrentVodSite(): Promise<CurrentVodSite | null> {
 
 export function getCurrentVodSiteAnalysis(): Promise<CurrentVodSiteAnalysis | null> {
   return apiRequest<CurrentVodSiteAnalysis | null>('/settings/current-vod-site/analysis')
+}
+
+export function getCurrentVodSiteSpiderAnalysis(): Promise<CurrentVodSiteSpiderAnalysis | null> {
+  return apiRequest<CurrentVodSiteSpiderAnalysis | null>('/settings/current-vod-site/spider-analysis')
 }
 
 export function setCurrentVodSite(vodSiteId: string): Promise<CurrentVodSite> {

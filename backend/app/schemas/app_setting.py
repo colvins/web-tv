@@ -48,3 +48,41 @@ class CurrentVodSiteAnalysisRead(BaseModel):
     ext_analysis: CurrentVodSiteExtAnalysis
     support_assessment: CurrentVodSiteSupportAssessment
     warnings: list[str]
+
+
+class CurrentVodSiteSpiderSupportStrategy(BaseModel):
+    level: Literal[
+        "unsupported_unknown",
+        "needs_spider_runtime",
+        "possible_js_runtime",
+        "possible_http_adapter",
+        "metadata_only",
+    ]
+    reason: str
+    recommended_next_step: str
+
+
+class CurrentVodSiteSpiderAnalysisRead(BaseModel):
+    site_id: uuid.UUID
+    site_key: str
+    site_name: str
+    site_type: int | None = None
+    api: str | None = None
+    source_name: str | None = None
+    root_config_keys: list[str]
+    spider_field_present: bool
+    spider_field_summary: str
+    api_reference_found: bool
+    api_reference_locations: list[str]
+    possible_reference_type: Literal[
+        "none",
+        "jar_reference",
+        "js_reference",
+        "py_reference",
+        "remote_url_reference",
+        "inline_name_only",
+        "unknown",
+    ]
+    possible_reference_summary: str
+    support_strategy: CurrentVodSiteSpiderSupportStrategy
+    warnings: list[str]

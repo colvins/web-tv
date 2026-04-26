@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.schemas.app_setting import CurrentVodSiteAnalysisRead, CurrentVodSiteRead, CurrentVodSiteUpdate
+from app.schemas.app_setting import (
+    CurrentVodSiteAnalysisRead,
+    CurrentVodSiteRead,
+    CurrentVodSiteSpiderAnalysisRead,
+    CurrentVodSiteUpdate,
+)
 from app.services import app_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -17,6 +22,11 @@ async def get_current_vod_site(db: AsyncSession = Depends(get_db)) -> dict | Non
 @router.get("/current-vod-site/analysis", response_model=CurrentVodSiteAnalysisRead | None)
 async def get_current_vod_site_analysis(db: AsyncSession = Depends(get_db)) -> dict | None:
     return await app_settings.get_current_vod_site_analysis(db)
+
+
+@router.get("/current-vod-site/spider-analysis", response_model=CurrentVodSiteSpiderAnalysisRead | None)
+async def get_current_vod_site_spider_analysis(db: AsyncSession = Depends(get_db)) -> dict | None:
+    return await app_settings.get_current_vod_site_spider_analysis(db)
 
 
 @router.put("/current-vod-site", response_model=CurrentVodSiteRead)
