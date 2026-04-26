@@ -55,7 +55,8 @@ export function useLivePlayback() {
 
   function syncControlsVisibility() {
     const keepVisibleForHover = playerHovering.value && !isFullscreen.value
-    if (shouldPinControlsVisible.value || keepVisibleForHover || playerFocused.value || !isPlaying.value) {
+    const keepVisibleForFocus = playerFocused.value && !isFullscreen.value
+    if (shouldPinControlsVisible.value || keepVisibleForHover || keepVisibleForFocus || !isPlaying.value) {
       controlsVisible.value = true
       clearControlsHideTimer()
       return
@@ -63,7 +64,9 @@ export function useLivePlayback() {
 
     clearControlsHideTimer()
     controlsHideTimer = window.setTimeout(() => {
-      if (!playerHovering.value && !playerFocused.value && isPlaying.value && playbackState.value === 'ready') {
+      const canHideForPointerState = !playerHovering.value || isFullscreen.value
+      const canHideForFocusState = !playerFocused.value || isFullscreen.value
+      if (canHideForPointerState && canHideForFocusState && isPlaying.value && playbackState.value === 'ready') {
         controlsVisible.value = false
       }
     }, 2800)

@@ -20,15 +20,21 @@ defineProps<{
     @mouseenter="playback.handlePlayerPointerEnter"
     @mouseleave="playback.handlePlayerPointerLeave"
     @mousemove="playback.handlePlayerInteraction"
+    @pointermove="playback.handlePlayerInteraction"
+    @pointerdown="playback.handlePlayerInteraction"
     @click="playback.handlePlayerInteraction"
+    @keydown="playback.handlePlayerInteraction"
     @touchstart.passive="playback.handlePlayerInteraction"
     @focusin="playback.handlePlayerFocusIn"
     @focusout="playback.handlePlayerFocusOut"
   >
-    <div class="relative bg-black" :class="playback.isFullscreen.value ? 'h-full min-h-screen w-full' : 'aspect-video'">
+    <div
+      class="player-video-frame relative bg-black"
+      :class="playback.isFullscreen.value ? 'h-full min-h-screen w-full overflow-visible rounded-none' : 'aspect-video'"
+    >
       <video
         :ref="playback.setVideoElement"
-        class="h-full w-full bg-black object-contain"
+        class="player-video h-full w-full bg-black object-contain"
         :class="playback.isFullscreen.value ? 'rounded-none' : ''"
         playsinline
         controlslist="nodownload noplaybackrate"
@@ -113,7 +119,7 @@ defineProps<{
 
           <div class="flex w-fit max-w-full items-center gap-3 rounded-full">
             <button
-              class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur-xl transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
+              class="player-control-button tv-focus-card flex h-12 w-12 items-center justify-center rounded-full text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
               :disabled="!playback.selectedChannel.value || playback.playbackState.value === 'loading'"
               @click.stop="playback.togglePlayback"
             >
@@ -121,7 +127,7 @@ defineProps<{
               <Play v-else class="ml-0.5 h-5 w-5 sm:h-6 sm:w-6" />
             </button>
             <button
-              class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur-xl transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
+              class="player-control-button tv-focus-card flex h-12 w-12 items-center justify-center rounded-full text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
               :disabled="!playback.selectedChannel.value"
               @click.stop="playback.toggleMute"
             >
@@ -129,7 +135,7 @@ defineProps<{
               <Volume2 v-else class="h-5 w-5 sm:h-6 sm:w-6" />
             </button>
             <button
-              class="tv-focus-card flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/58 text-white shadow-[0_12px_32px_rgba(0,0,0,0.38)] backdrop-blur-xl transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
+              class="player-control-button tv-focus-card flex h-12 w-12 items-center justify-center rounded-full text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
               :disabled="!playback.selectedChannel.value"
               @click.stop="playback.toggleFullscreen"
             >
@@ -164,6 +170,21 @@ defineProps<{
 </template>
 
 <style scoped>
+.player-control-button {
+  border: 1px solid rgb(255 255 255 / 0.24);
+  background: rgb(0 0 0 / 0.68);
+  box-shadow:
+    0 12px 32px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.player-control-button:hover,
+.player-control-button:focus-visible {
+  background: rgb(16 16 18 / 0.78);
+}
+
 .player-shell:fullscreen {
   border: 0;
   border-radius: 0;
@@ -171,8 +192,10 @@ defineProps<{
   overflow: visible;
 }
 
+.player-shell:fullscreen .player-video-frame,
 .player-shell:fullscreen video {
   border-radius: 0;
+  overflow: visible;
 }
 
 .player-shell:-webkit-full-screen {
@@ -182,7 +205,9 @@ defineProps<{
   overflow: visible;
 }
 
+.player-shell:-webkit-full-screen .player-video-frame,
 .player-shell:-webkit-full-screen video {
   border-radius: 0;
+  overflow: visible;
 }
 </style>
