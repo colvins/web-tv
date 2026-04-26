@@ -5,16 +5,20 @@ import type { LivePlayback } from '@/composables/useLivePlayback'
 
 defineProps<{
   playback: LivePlayback
+  compact?: boolean
 }>()
 </script>
 
 <template>
   <div
-    class="player-shell glass-panel z-30 mx-auto w-full max-w-5xl border border-white/12 bg-black/72 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition md:sticky md:top-4 lg:top-6 xl:top-8"
+    class="player-shell glass-panel mx-auto w-full border border-white/12 bg-black/72 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-all duration-300"
     :class="
       playback.isFullscreen.value
         ? 'overflow-visible rounded-none border-transparent shadow-none'
-        : 'overflow-hidden rounded-[2rem] sm:rounded-[2.5rem]'
+        : [
+            'overflow-hidden rounded-[2rem] sm:rounded-[2.5rem]',
+            compact ? 'md:max-w-3xl xl:max-w-4xl' : 'max-w-5xl',
+          ]
     "
     data-player-shell
     @mouseenter="playback.handlePlayerPointerEnter"
@@ -29,8 +33,14 @@ defineProps<{
     @focusout="playback.handlePlayerFocusOut"
   >
     <div
-      class="player-video-frame relative bg-black"
-      :class="playback.isFullscreen.value ? 'h-full min-h-screen w-full overflow-visible rounded-none' : 'aspect-video'"
+      class="player-video-frame relative bg-black transition-all duration-300"
+      :class="
+        playback.isFullscreen.value
+          ? 'h-full min-h-screen w-full overflow-visible rounded-none'
+          : compact
+            ? 'aspect-video md:aspect-[16/6.5] xl:aspect-[16/6]'
+            : 'aspect-video'
+      "
     >
       <video
         :ref="playback.setVideoElement"

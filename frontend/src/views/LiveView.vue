@@ -23,9 +23,11 @@ const query = ref('')
 const loading = ref(false)
 const togglingIds = ref<Set<string>>(new Set())
 const groupScroller = ref<HTMLElement | null>(null)
+const stickyLiveArea = ref<HTMLElement | null>(null)
 const groupPointerDown = ref(false)
 const groupDragging = ref(false)
 const suppressNextGroupClick = ref(false)
+const stickyCompact = ref(false)
 const playback = useLivePlayback()
 
 let searchTimer: number | undefined
@@ -41,6 +43,11 @@ const selectedGroupName = computed(
 
 async function selectChannel(channel: LiveChannel) {
   await playback.loadChannel(channel)
+}
+
+function updateStickyCompact() {
+  const top = stickyLiveArea.value?.getBoundingClientRect().top ?? 0
+  stickyCompact.value = window.scrollY > 120 && top <= 24
 }
 
 function clearSuppressGroupClickTimer() {
@@ -151,11 +158,18 @@ watch(query, () => {
 
 watch(selectedGroupId, loadLiveData)
 
-onMounted(loadLiveData)
+onMounted(() => {
+  void loadLiveData()
+  updateStickyCompact()
+  window.addEventListener('scroll', updateStickyCompact, { passive: true })
+  window.addEventListener('resize', updateStickyCompact)
+})
 
 onBeforeUnmount(() => {
   window.clearTimeout(searchTimer)
   clearSuppressGroupClickTimer()
+  window.removeEventListener('scroll', updateStickyCompact)
+  window.removeEventListener('resize', updateStickyCompact)
 })
 </script>
 
@@ -173,10 +187,14 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <LivePlayer :playback="playback" />
+    <div
+      ref="stickyLiveArea"
+      class="live-sticky-area relative grid gap-4 rounded-[2rem] transition-all duration-300 md:sticky md:top-3 md:z-40 md:-mx-3 md:px-3 md:py-3 lg:top-5 xl:top-6"
+      :class="stickyCompact ? 'md:gap-3' : ''"
+    >
+      <LivePlayer :playback="playback" :compact="stickyCompact" />
 
-    <div class="grid gap-4 pb-6 xl:content-start xl:pb-0">
-      <div class="glass-panel rounded-[1.5rem] p-3 sm:rounded-[2rem] sm:p-4">
+      <div class="grid gap-3 rounded-[1.5rem] border border-white/10 bg-black/42 p-3 shadow-[0_18px_64px_rgba(0,0,0,0.28)] backdrop-blur-2xl sm:rounded-[2rem] sm:p-4 md:bg-black/56">
         <div class="flex w-full flex-col gap-3 sm:flex-row">
           <NInput
             v-model:value="query"
@@ -192,47 +210,49 @@ onBeforeUnmount(() => {
             Refresh
           </NButton>
         </div>
-      </div>
 
-      <div
-        ref="groupScroller"
-        class="chip-scroller -mx-1 cursor-grab overflow-x-auto overscroll-x-contain px-1 pb-1 active:cursor-grabbing [scrollbar-width:none]"
-        @pointerdown="startGroupDrag"
-        @pointermove="moveGroupDrag"
-        @pointerup="resetGroupDrag"
-        @pointercancel="resetGroupDrag"
-        @pointerleave="resetGroupDrag"
-        @lostpointercapture="resetGroupDrag"
-      >
-        <div class="flex min-w-max flex-nowrap gap-3">
-          <button
-            class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
-            :class="
-              selectedGroupId === null
-                ? 'border-aurora/40 bg-aurora/18 text-white'
-                : 'border-white/10 bg-white/6 text-white/62'
-            "
-            @click="selectGroup(null)"
-          >
-            All
-          </button>
-          <button
-            v-for="group in groups"
-            :key="group.id"
-            class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
-            :class="
-              selectedGroupId === group.id
-                ? 'border-aurora/40 bg-aurora/18 text-white'
-                : 'border-white/10 bg-white/6 text-white/62'
-            "
-            @click="selectGroup(group.id)"
-          >
-            {{ group.name }}
-            <span class="ml-2 text-white/42">{{ group.channel_count }}</span>
-          </button>
+        <div
+          ref="groupScroller"
+          class="chip-scroller -mx-1 cursor-grab overflow-x-auto overscroll-x-contain px-1 pb-1 active:cursor-grabbing [scrollbar-width:none]"
+          @pointerdown="startGroupDrag"
+          @pointermove="moveGroupDrag"
+          @pointerup="resetGroupDrag"
+          @pointercancel="resetGroupDrag"
+          @pointerleave="resetGroupDrag"
+          @lostpointercapture="resetGroupDrag"
+        >
+          <div class="flex min-w-max flex-nowrap gap-3">
+            <button
+              class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
+              :class="
+                selectedGroupId === null
+                  ? 'border-aurora/40 bg-aurora/18 text-white'
+                  : 'border-white/10 bg-white/6 text-white/62'
+              "
+              @click="selectGroup(null)"
+            >
+              All
+            </button>
+            <button
+              v-for="group in groups"
+              :key="group.id"
+              class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
+              :class="
+                selectedGroupId === group.id
+                  ? 'border-aurora/40 bg-aurora/18 text-white'
+                  : 'border-white/10 bg-white/6 text-white/62'
+              "
+              @click="selectGroup(group.id)"
+            >
+              {{ group.name }}
+              <span class="ml-2 text-white/42">{{ group.channel_count }}</span>
+            </button>
+          </div>
         </div>
       </div>
+    </div>
 
+    <div class="grid gap-4 pb-6 xl:content-start xl:pb-0">
       <div v-if="loading && channels.length === 0" class="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
         <div v-for="index in 12" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
       </div>
@@ -267,5 +287,37 @@ onBeforeUnmount(() => {
 <style scoped>
 .chip-scroller::-webkit-scrollbar {
   display: none;
+}
+
+@media (min-width: 768px) {
+  .live-sticky-area {
+    isolation: isolate;
+  }
+
+  .live-sticky-area::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: 2rem;
+    background:
+      linear-gradient(180deg, rgb(5 5 7 / 0.86), rgb(5 5 7 / 0.52) 74%, rgb(5 5 7 / 0));
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    pointer-events: none;
+  }
+
+  .live-sticky-area::after {
+    content: '';
+    position: absolute;
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: -2rem;
+    height: 2.5rem;
+    z-index: -1;
+    background: linear-gradient(180deg, rgb(5 5 7 / 0.42), rgb(5 5 7 / 0));
+    filter: blur(10px);
+    pointer-events: none;
+  }
 }
 </style>
