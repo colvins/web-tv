@@ -83,6 +83,33 @@ export type CurrentVodSite = {
   source_name: string | null
 }
 
+export type CurrentVodSiteAnalysis = {
+  site_id: string
+  site_name: string
+  site_key: string
+  site_type: number | null
+  api: string | null
+  source_name: string | null
+  enabled: boolean
+  raw_keys: string[]
+  known_flags: Record<string, unknown>
+  ext_analysis: {
+    present: boolean
+    value_type: string | null
+    summary: string
+    looks_like_url: boolean
+    looks_like_json: boolean
+    looks_like_base64: boolean
+    looks_like_executable_or_opaque: boolean
+  }
+  support_assessment: {
+    level: 'metadata_only' | 'possible_http' | 'requires_spider' | 'unsupported_unknown'
+    reason: string
+    next_step: string
+  }
+  warnings: string[]
+}
+
 export function listSourceConfigs(): Promise<SourceConfig[]> {
   return apiRequest<SourceConfig[]>('/configs')
 }
@@ -143,6 +170,10 @@ export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {
 
 export function getCurrentVodSite(): Promise<CurrentVodSite | null> {
   return apiRequest<CurrentVodSite | null>('/settings/current-vod-site')
+}
+
+export function getCurrentVodSiteAnalysis(): Promise<CurrentVodSiteAnalysis | null> {
+  return apiRequest<CurrentVodSiteAnalysis | null>('/settings/current-vod-site/analysis')
 }
 
 export function setCurrentVodSite(vodSiteId: string): Promise<CurrentVodSite> {
