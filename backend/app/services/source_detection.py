@@ -42,6 +42,29 @@ def detect_source_content(content: bytes) -> DetectionResult:
     return DetectionResult("unknown", 0.2, "Content format was not recognized.")
 
 
+def recover_json_config(content: bytes) -> Any | None:
+    text = _decode_text(content).lstrip("\ufeff\r\n\t ")
+    parsed = _parse_json(text)
+    if parsed is not None:
+        return parsed
+
+    decoded = _decode_base64_text(text)
+    if decoded is not None:
+        parsed = _parse_json(decoded.lstrip("\ufeff\r\n\t "))
+        if parsed is not None:
+            return parsed
+
+    for match in BASE64_BLOCK_RE.finditer(content):
+        block = match.group(0).decode("ascii", errors="ignore")
+        decoded = _decode_base64_text(block)
+        if decoded is None:
+            continue
+        parsed = _parse_json(decoded.lstrip("\ufeff\r\n\t "))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _decode_text(content: bytes) -> str:
     return content.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")
 

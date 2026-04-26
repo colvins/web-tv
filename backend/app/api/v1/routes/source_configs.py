@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.schemas.source_config import SourceConfigCreate, SourceConfigRead, SourceConfigUpdate
 from app.schemas.import_job import ImportJobRead
-from app.services import import_jobs, source_configs
+from app.schemas.vod_site import VodSiteRead
+from app.services import import_jobs, source_configs, vod_sites
 
 router = APIRouter(prefix="/configs", tags=["source-configs"])
 
@@ -47,3 +48,13 @@ async def delete_config(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 @router.post("/{config_id}/import", response_model=ImportJobRead)
 async def import_config(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> ImportJobRead:
     return await import_jobs.import_source_config(db, config_id)
+
+
+@router.post("/{config_id}/extract-sites", response_model=list[VodSiteRead])
+async def extract_sites(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[VodSiteRead]:
+    return await vod_sites.extract_sites_for_source(db, config_id)
+
+
+@router.get("/{config_id}/vod-sites", response_model=list[VodSiteRead])
+async def list_vod_sites(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[VodSiteRead]:
+    return await vod_sites.list_vod_sites_for_source(db, config_id)

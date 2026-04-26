@@ -2,10 +2,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
   CloudDownload,
+  DatabaseZap,
   Edit3,
   Plus,
   Power,
   RefreshCw,
+  Rows3,
   Trash2,
 } from 'lucide-vue-next'
 import {
@@ -24,13 +26,17 @@ import {
 import {
   createSourceConfig,
   deleteSourceConfig,
+  extractVodSites,
   importSourceConfig,
+  listSourceVodSites,
   listSourceConfigs,
+  updateVodSite,
   updateSourceConfig,
   type ImportJob,
   type SourceConfig,
   type SourceConfigPayload,
   type SourceType,
+  type VodSite,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 
@@ -39,7 +45,12 @@ const sources = ref<SourceConfig[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const importingIds = ref<Set<string>>(new Set())
+const extractingIds = ref<Set<string>>(new Set())
 const latestJob = ref<ImportJob | null>(null)
+const siteModalOpen = ref(false)
+const selectedSource = ref<SourceConfig | null>(null)
+const selectedSites = ref<VodSite[]>([])
+const loadingSites = ref(false)
 const modalOpen = ref(false)
 const deleteTarget = ref<SourceConfig | null>(null)
 const editingSource = ref<SourceConfig | null>(null)
@@ -164,6 +175,48 @@ async function runImport(source: SourceConfig) {
   }
 }
 
+async function extractSites(source: SourceConfig) {
+  extractingIds.value = new Set(extractingIds.value).add(source.id)
+  try {
+    selectedSites.value = await extractVodSites(source.id)
+    selectedSource.value = source
+    siteModalOpen.value = true
+    await loadSources()
+    message.success(`Extracted ${selectedSites.value.length} sites`)
+  } catch (error) {
+    showError(error, 'Unable to extract sites')
+  } finally {
+    const next = new Set(extractingIds.value)
+    next.delete(source.id)
+    extractingIds.value = next
+  }
+}
+
+async function openSites(source: SourceConfig) {
+  selectedSource.value = source
+  siteModalOpen.value = true
+  loadingSites.value = true
+  try {
+    selectedSites.value = await listSourceVodSites(source.id)
+  } catch (error) {
+    showError(error, 'Unable to load sites')
+  } finally {
+    loadingSites.value = false
+  }
+}
+
+async function toggleVodSite(site: VodSite, enabled: boolean) {
+  const previous = site.enabled
+  site.enabled = enabled
+  try {
+    const updated = await updateVodSite(site.id, enabled)
+    selectedSites.value = selectedSites.value.map((item) => (item.id === updated.id ? updated : item))
+  } catch (error) {
+    site.enabled = previous
+    showError(error, 'Unable to update site')
+  }
+}
+
 async function confirmDelete() {
   if (!deleteTarget.value) return
   const target = deleteTarget.value
@@ -207,6 +260,11 @@ function shortSha(value: string | null) {
 
 function formatConfidence(value: number | null) {
   return value === null ? 'Unknown' : `${Math.round(value * 100)}%`
+}
+
+function shortApi(value: string | null) {
+  if (!value) return 'No API'
+  return value.length > 64 ? `${value.slice(0, 64)}...` : value
 }
 
 onMounted(loadSources)
@@ -350,12 +408,16 @@ onMounted(loadSources)
             <span>Last success</span>
             <span class="text-white/72">{{ formatDate(source.last_success_at) }}</span>
           </div>
+          <div class="flex justify-between gap-4">
+            <span>VOD sites</span>
+            <span class="text-white/72">{{ source.vod_site_count }}</span>
+          </div>
           <p v-if="source.last_error" class="rounded-2xl border border-red-300/20 bg-red-400/10 p-3 text-red-100">
             {{ source.last_error }}
           </p>
         </div>
 
-        <div class="mt-6 flex gap-3">
+        <div class="mt-6 flex flex-wrap gap-3">
           <NButton
             round
             type="primary"
@@ -364,6 +426,19 @@ onMounted(loadSources)
           >
             <template #icon><CloudDownload class="h-4 w-4" /></template>
             Import
+          </NButton>
+          <NButton
+            round
+            secondary
+            :loading="extractingIds.has(source.id)"
+            @click="extractSites(source)"
+          >
+            <template #icon><DatabaseZap class="h-4 w-4" /></template>
+            Extract Sites
+          </NButton>
+          <NButton round secondary :disabled="source.vod_site_count === 0" @click="openSites(source)">
+            <template #icon><Rows3 class="h-4 w-4" /></template>
+            Sites
           </NButton>
           <NButton round secondary class="flex-1" @click="openEditModal(source)">
             <template #icon><Edit3 class="h-4 w-4" /></template>
@@ -415,6 +490,47 @@ onMounted(loadSources)
       <NButton round type="error" :loading="saving" @click="confirmDelete">Delete</NButton>
     </div>
   </NModal>
+
+  <NModal
+    v-model:show="siteModalOpen"
+    preset="card"
+    :title="selectedSource ? `${selectedSource.name} Sites` : 'VOD Sites'"
+    class="sites-modal"
+    :bordered="false"
+  >
+    <div v-if="loadingSites" class="grid gap-3">
+      <div v-for="index in 3" :key="index" class="h-24 animate-pulse rounded-3xl bg-white/8"></div>
+    </div>
+    <div v-else class="grid max-h-[70vh] gap-3 overflow-y-auto pr-1">
+      <article
+        v-for="site in selectedSites"
+        :key="site.id"
+        class="rounded-3xl border border-white/10 bg-white/6 p-4"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-lg font-semibold text-white">{{ site.site_name }}</h3>
+              <span class="rounded-full border border-white/10 px-2 py-1 text-xs text-white/54">
+                {{ site.site_key }}
+              </span>
+              <span class="rounded-full border border-white/10 px-2 py-1 text-xs text-white/54">
+                type {{ site.site_type ?? 'unknown' }}
+              </span>
+            </div>
+            <p class="mt-3 break-all text-sm leading-6 text-white/54">{{ shortApi(site.api) }}</p>
+          </div>
+          <NSwitch :value="site.enabled" @update:value="(value) => toggleVodSite(site, value)" />
+        </div>
+        <p v-if="site.analysis_note" class="mt-3 rounded-2xl border border-white/10 bg-black/18 p-3 text-xs leading-5 text-white/54">
+          {{ site.analysis_note }}
+        </p>
+      </article>
+      <p v-if="selectedSites.length === 0" class="rounded-3xl border border-white/10 bg-white/6 p-6 text-white/58">
+        No sites extracted for this source.
+      </p>
+    </div>
+  </NModal>
 </template>
 
 <style scoped>
@@ -422,6 +538,14 @@ onMounted(loadSources)
   width: min(92vw, 34rem);
   border-radius: 2rem;
   background: rgba(14, 16, 22, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(28px);
+}
+
+:deep(.sites-modal) {
+  width: min(94vw, 58rem);
+  border-radius: 2rem;
+  background: rgba(14, 16, 22, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(28px);
 }

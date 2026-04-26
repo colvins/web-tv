@@ -11,6 +11,7 @@ export type SourceConfig = {
   last_import_at: string | null
   last_success_at: string | null
   last_error: string | null
+  vod_site_count: number
   created_at: string
   updated_at: string
 }
@@ -47,6 +48,26 @@ export type ImportJob = {
   error_message: string | null
   started_at: string | null
   finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type VodSite = {
+  id: string
+  source_config_id: string | null
+  import_job_id: string | null
+  site_key: string
+  site_name: string
+  site_type: number | null
+  api: string | null
+  searchable: boolean | null
+  changeable: boolean | null
+  quick_search: boolean | null
+  filterable: boolean | null
+  player_type: number | null
+  enabled: boolean
+  sort_order: number
+  analysis_note: string | null
   created_at: string
   updated_at: string
 }
@@ -90,4 +111,21 @@ export function listImportJobs(): Promise<ImportJob[]> {
 
 export function getImportJob(id: string): Promise<ImportJob> {
   return apiRequest<ImportJob>(`/import-jobs/${id}`)
+}
+
+export function extractVodSites(sourceConfigId: string): Promise<VodSite[]> {
+  return apiRequest<VodSite[]>(`/configs/${sourceConfigId}/extract-sites`, {
+    method: 'POST',
+  })
+}
+
+export function listSourceVodSites(sourceConfigId: string): Promise<VodSite[]> {
+  return apiRequest<VodSite[]>(`/configs/${sourceConfigId}/vod-sites`)
+}
+
+export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {
+  return apiRequest<VodSite>(`/vod-sites/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  })
 }

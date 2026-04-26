@@ -21,6 +21,7 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text)
 
     import_jobs: Mapped[list["ImportJob"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
+    vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("source_type IN ('json', 'm3u', 'txt', 'm3u8')", name="ck_source_configs_source_type"),
@@ -51,6 +52,7 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     source_config: Mapped[SourceConfig] = relationship(back_populates="import_jobs")
+    vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="import_job")
 
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'running', 'success', 'failed')", name="ck_import_jobs_status"),
@@ -66,13 +68,39 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 class VodSite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "vod_sites"
 
-    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
-    base_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_config_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        index=True,
+    )
+    import_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_jobs.id", ondelete="SET NULL"),
+        index=True,
+    )
+    site_key: Mapped[str] = mapped_column(String(180), nullable=False)
+    site_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    site_type: Mapped[int | None] = mapped_column(Integer)
+    api: Mapped[str | None] = mapped_column(Text)
+    searchable: Mapped[bool | None] = mapped_column(Boolean)
+    changeable: Mapped[bool | None] = mapped_column(Boolean)
+    quick_search: Mapped[bool | None] = mapped_column(Boolean)
+    filterable: Mapped[bool | None] = mapped_column(Boolean)
+    player_type: Mapped[int | None] = mapped_column(Integer)
+    ext: Mapped[JsonDict | list | str | int | None] = mapped_column(JSONB)
+    style: Mapped[JsonDict | list | str | int | None] = mapped_column(JSONB)
+    categories_hint: Mapped[JsonDict | list | str | int | None] = mapped_column(JSONB)
+    raw_config: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    config: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    analysis_note: Mapped[str | None] = mapped_column(Text)
 
-    __table_args__ = (Index("ix_vod_sites_enabled_priority", "enabled", "priority"),)
+    source_config: Mapped[SourceConfig | None] = relationship(back_populates="vod_sites")
+    import_job: Mapped[ImportJob | None] = relationship(back_populates="vod_sites")
+
+    __table_args__ = (
+        UniqueConstraint("source_config_id", "site_key", name="uq_vod_sites_source_site_key"),
+        Index("ix_vod_sites_source_sort", "source_config_id", "sort_order"),
+        Index("ix_vod_sites_enabled_sort", "enabled", "sort_order"),
+    )
 
 
 class LiveSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):

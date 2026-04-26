@@ -14,14 +14,24 @@ def _ordered_query() -> Select[tuple[SourceConfig]]:
 
 
 async def list_source_configs(db: AsyncSession) -> list[SourceConfig]:
+    from app.services.vod_sites import count_vod_sites_by_source
+
     result = await db.scalars(_ordered_query())
-    return list(result)
+    configs = list(result)
+    counts = await count_vod_sites_by_source(db)
+    for config in configs:
+        config.vod_site_count = counts.get(config.id, 0)
+    return configs
 
 
 async def get_source_config(db: AsyncSession, config_id: uuid.UUID) -> SourceConfig:
+    from app.services.vod_sites import count_vod_sites_by_source
+
     config = await db.get(SourceConfig, config_id)
     if config is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source config not found")
+    counts = await count_vod_sites_by_source(db)
+    config.vod_site_count = counts.get(config.id, 0)
     return config
 
 
