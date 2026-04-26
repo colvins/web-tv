@@ -22,6 +22,7 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     import_jobs: Mapped[list["ImportJob"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
+    snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint("source_type IN ('json', 'm3u', 'txt', 'm3u8')", name="ck_source_configs_source_type"),
@@ -53,6 +54,7 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     source_config: Mapped[SourceConfig] = relationship(back_populates="import_jobs")
     vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="import_job")
+    snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="import_job")
 
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'running', 'success', 'failed')", name="ck_import_jobs_status"),
@@ -62,6 +64,39 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_import_jobs_source_status", "source_config_id", "status"),
         Index("ix_import_jobs_created_at", "created_at"),
+    )
+
+
+class SourceSnapshot(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "source_snapshots"
+
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    import_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("import_jobs.id", ondelete="SET NULL"),
+        index=True,
+    )
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    detected_format: Mapped[str | None] = mapped_column(String(40), index=True)
+    recovered_format: Mapped[str | None] = mapped_column(String(40), index=True)
+    root_config: Mapped[JsonDict | None] = mapped_column(JSONB)
+    root_keys: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    sites_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lives_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    parses_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    has_spider: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    spider_summary: Mapped[str | None] = mapped_column(Text)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+
+    source_config: Mapped[SourceConfig] = relationship(back_populates="snapshots")
+    import_job: Mapped[ImportJob | None] = relationship(back_populates="snapshots")
+
+    __table_args__ = (
+        UniqueConstraint("source_config_id", "content_sha256", name="uq_source_snapshots_source_sha"),
+        Index("ix_source_snapshots_source_created", "source_config_id", "created_at"),
     )
 
 

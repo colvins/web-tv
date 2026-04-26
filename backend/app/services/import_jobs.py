@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ImportJob
 from app.services.source_detection import detect_source_content
 from app.services.source_configs import get_source_config
+from app.services.source_snapshots import store_source_snapshot
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 RAW_PREVIEW_CHARS = 2000
@@ -73,12 +74,13 @@ async def import_source_config(db: AsyncSession, source_config_id: uuid.UUID) ->
     source_config.last_import_at = finished_at
     source_config.last_success_at = finished_at
     source_config.last_error = None
+    await store_source_snapshot(db, job, result["content"])
     await db.commit()
     await db.refresh(job)
     return job
 
 
-async def _download_source(url: str) -> dict[str, str | int | float | None]:
+async def _download_source(url: str) -> dict[str, str | int | float | bytes | None]:
     hasher = hashlib.sha256()
     chunks: list[bytes] = []
     total = 0
@@ -111,4 +113,5 @@ async def _download_source(url: str) -> dict[str, str | int | float | None]:
         "detected_format": detection.detected_format,
         "detection_confidence": detection.detection_confidence,
         "detection_note": detection.detection_note,
+        "content": raw,
     }

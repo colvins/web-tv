@@ -7,6 +7,7 @@ from app.db.models.content import (
     ParseApi,
     PlayHistory,
     SourceConfig,
+    SourceSnapshot,
     VodCache,
     VodSite,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "ParseApi",
     "PlayHistory",
     "SourceConfig",
+    "SourceSnapshot",
     "VodCache",
     "VodSite",
 ]
