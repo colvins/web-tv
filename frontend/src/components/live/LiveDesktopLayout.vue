@@ -125,7 +125,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="grid gap-6 pb-28">
+  <section class="live-desktop-layout grid gap-6 pb-28">
     <div class="glass-panel rounded-[2.5rem] p-8">
       <p class="text-sm uppercase tracking-[0.28em] text-white/42">Live TV</p>
       <h2 class="mt-3 text-5xl font-semibold text-white xl:text-6xl">{{ selectedGroupName }}</h2>
@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="live-channel-content grid gap-4 pb-6 xl:content-start xl:pb-0">
+    <div class="live-channel-content relative z-0 grid gap-4 pb-6 xl:content-start xl:pb-0">
       <div v-if="loading && channels.length === 0" class="grid grid-cols-4 gap-3 xl:grid-cols-5 2xl:grid-cols-6">
         <div v-for="index in 12" :key="index" class="glass-panel aspect-square animate-pulse rounded-[1.5rem]"></div>
       </div>
@@ -230,12 +230,17 @@ onBeforeUnmount(() => {
   display: none;
 }
 
+.live-desktop-layout {
+  --live-sticky-flow-gap: 2rem;
+}
+
 .live-sticky-area {
   isolation: isolate;
 }
 
 .live-channel-content {
-  scroll-margin-top: 1.5rem;
+  margin-top: var(--live-sticky-flow-gap);
+  scroll-margin-top: var(--live-sticky-flow-gap);
 }
 
 .live-sticky-area::before {
@@ -255,11 +260,11 @@ onBeforeUnmount(() => {
   position: absolute;
   left: 0.75rem;
   right: 0.75rem;
-  bottom: -1rem;
+  bottom: -0.75rem;
   height: 1.5rem;
   z-index: -1;
-  background: linear-gradient(180deg, rgb(5 5 7 / 0.3), rgb(5 5 7 / 0));
-  filter: blur(8px);
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.24), rgb(5 5 7 / 0));
+  filter: blur(6px);
   pointer-events: none;
 }
 </style>
