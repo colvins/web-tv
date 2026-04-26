@@ -113,3 +113,12 @@ If verification fails:
 - Mention clearly if browser behavior was not manually verified.
 - Mention clearly if no channel URLs were batch-probed.
 - Mention clearly if no spider/JAR/JS/Python/ext code was executed.
+
+## Additional Persistent Rules
+
+- For frontend UI work, prefer splitting large pages into focused components/composables instead of growing one huge file.
+- For platform-sensitive UI behavior, separate or clearly isolate desktop, mobile, Safari/iOS Safari, and Chrome/desktop fullscreen handling where appropriate.
+- Do not downgrade or pin package versions unless explicitly requested.
+- If dependencies or missing tools are required, install them in the project/container environment instead of skipping verification.
+- If verification passes, create a git commit with a clear English commit message.
+- Do not push automatically unless the user explicitly asks.
