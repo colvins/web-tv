@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ImportJob, SourceConfig, VodSite
 from app.services.import_jobs import MAX_IMPORT_BYTES, REQUEST_TIMEOUT_SECONDS
+from app.services.app_settings import clear_current_vod_site_if_matches
 from app.services.source_detection import recover_json_config
 from app.services.source_configs import get_source_config
 
@@ -56,6 +57,8 @@ async def get_vod_site(db: AsyncSession, site_id: uuid.UUID) -> VodSite:
 async def update_vod_site_enabled(db: AsyncSession, site_id: uuid.UUID, enabled: bool) -> VodSite:
     site = await get_vod_site(db, site_id)
     site.enabled = enabled
+    if not enabled:
+        await clear_current_vod_site_if_matches(db, site.id)
     await db.commit()
     await db.refresh(site)
     return site

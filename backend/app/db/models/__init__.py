@@ -1,4 +1,5 @@
 from app.db.models.content import (
+    AppSetting,
     Favorite,
     ImportJob,
     LiveChannel,
@@ -11,6 +12,7 @@ from app.db.models.content import (
 )
 
 __all__ = [
+    "AppSetting",
     "Favorite",
     "ImportJob",
     "LiveChannel",

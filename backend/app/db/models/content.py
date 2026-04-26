@@ -103,6 +103,13 @@ class VodSite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
 
+class AppSetting(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+    value: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
+
+
 class LiveSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "live_sources"
 

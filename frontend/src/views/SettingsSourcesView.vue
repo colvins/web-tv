@@ -4,6 +4,7 @@ import {
   CloudDownload,
   DatabaseZap,
   Edit3,
+  CheckCircle2,
   Plus,
   Power,
   RefreshCw,
@@ -27,12 +28,15 @@ import {
   createSourceConfig,
   deleteSourceConfig,
   extractVodSites,
+  getCurrentVodSite,
   importSourceConfig,
   listSourceVodSites,
   listSourceConfigs,
+  setCurrentVodSite,
   updateVodSite,
   updateSourceConfig,
   type ImportJob,
+  type CurrentVodSite,
   type SourceConfig,
   type SourceConfigPayload,
   type SourceType,
@@ -47,6 +51,8 @@ const saving = ref(false)
 const importingIds = ref<Set<string>>(new Set())
 const extractingIds = ref<Set<string>>(new Set())
 const latestJob = ref<ImportJob | null>(null)
+const currentVodSite = ref<CurrentVodSite | null>(null)
+const settingCurrentIds = ref<Set<string>>(new Set())
 const siteModalOpen = ref(false)
 const selectedSource = ref<SourceConfig | null>(null)
 const selectedSites = ref<VodSite[]>([])
@@ -123,6 +129,14 @@ async function loadSources() {
   }
 }
 
+async function loadCurrentVodSite() {
+  try {
+    currentVodSite.value = await getCurrentVodSite()
+  } catch (error) {
+    showError(error, 'Unable to load current VOD site')
+  }
+}
+
 async function submitForm() {
   await formRef.value?.validate()
   saving.value = true
@@ -150,6 +164,7 @@ async function toggleSource(source: SourceConfig, enabled: boolean) {
   try {
     const updated = await updateSourceConfig(source.id, { enabled })
     sources.value = sources.value.map((item) => (item.id === updated.id ? updated : item))
+    await loadCurrentVodSite()
   } catch (error) {
     source.enabled = previous
     showError(error, 'Unable to update source')
@@ -182,6 +197,7 @@ async function extractSites(source: SourceConfig) {
     selectedSource.value = source
     siteModalOpen.value = true
     await loadSources()
+    await loadCurrentVodSite()
     message.success(`Extracted ${selectedSites.value.length} sites`)
   } catch (error) {
     showError(error, 'Unable to extract sites')
@@ -211,9 +227,27 @@ async function toggleVodSite(site: VodSite, enabled: boolean) {
   try {
     const updated = await updateVodSite(site.id, enabled)
     selectedSites.value = selectedSites.value.map((item) => (item.id === updated.id ? updated : item))
+    if (selectedSource.value) {
+      selectedSites.value = await listSourceVodSites(selectedSource.value.id)
+    }
+    await Promise.all([loadCurrentVodSite(), loadSources()])
   } catch (error) {
     site.enabled = previous
     showError(error, 'Unable to update site')
+  }
+}
+
+async function useVodSite(site: VodSite) {
+  settingCurrentIds.value = new Set(settingCurrentIds.value).add(site.id)
+  try {
+    currentVodSite.value = await setCurrentVodSite(site.id)
+    message.success('Current VOD site updated')
+  } catch (error) {
+    showError(error, 'Unable to set current VOD site')
+  } finally {
+    const next = new Set(settingCurrentIds.value)
+    next.delete(site.id)
+    settingCurrentIds.value = next
   }
 }
 
@@ -267,7 +301,18 @@ function shortApi(value: string | null) {
   return value.length > 64 ? `${value.slice(0, 64)}...` : value
 }
 
-onMounted(loadSources)
+function isCurrentSite(site: VodSite) {
+  return currentVodSite.value?.id === site.id
+}
+
+function sourceCurrentLabel(source: SourceConfig) {
+  if (currentVodSite.value?.source_config_id !== source.id) return null
+  return `${currentVodSite.value.site_name} / ${currentVodSite.value.site_key}`
+}
+
+onMounted(async () => {
+  await Promise.all([loadSources(), loadCurrentVodSite()])
+})
 </script>
 
 <template>
@@ -306,6 +351,13 @@ onMounted(loadSources)
           <p class="text-sm text-white/46">Types</p>
           <p class="mt-2 text-3xl font-semibold">4</p>
         </div>
+      </div>
+      <div class="mt-4 rounded-[1.5rem] border border-white/10 bg-white/6 p-5">
+        <p class="text-sm text-white/46">Current VOD site</p>
+        <p class="mt-2 text-lg font-semibold text-white">
+          <span v-if="currentVodSite">{{ currentVodSite.site_name }} / {{ currentVodSite.site_key }}</span>
+          <span v-else>No VOD site selected</span>
+        </p>
       </div>
     </div>
 
@@ -412,6 +464,10 @@ onMounted(loadSources)
             <span>VOD sites</span>
             <span class="text-white/72">{{ source.vod_site_count }}</span>
           </div>
+          <div v-if="sourceCurrentLabel(source)" class="rounded-2xl border border-aurora/25 bg-aurora/10 p-3 text-white">
+            <span class="block text-xs uppercase tracking-[0.18em] text-white/48">Current</span>
+            <span class="mt-1 block text-sm">{{ sourceCurrentLabel(source) }}</span>
+          </div>
           <p v-if="source.last_error" class="rounded-2xl border border-red-300/20 bg-red-400/10 p-3 text-red-100">
             {{ source.last_error }}
           </p>
@@ -505,7 +561,8 @@ onMounted(loadSources)
       <article
         v-for="site in selectedSites"
         :key="site.id"
-        class="rounded-3xl border border-white/10 bg-white/6 p-4"
+        class="rounded-3xl border bg-white/6 p-4"
+        :class="isCurrentSite(site) ? 'border-aurora/60 shadow-glow' : 'border-white/10'"
       >
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
@@ -517,10 +574,29 @@ onMounted(loadSources)
               <span class="rounded-full border border-white/10 px-2 py-1 text-xs text-white/54">
                 type {{ site.site_type ?? 'unknown' }}
               </span>
+              <span
+                v-if="isCurrentSite(site)"
+                class="rounded-full border border-aurora/30 bg-aurora/15 px-2 py-1 text-xs text-white"
+              >
+                Current
+              </span>
             </div>
             <p class="mt-3 break-all text-sm leading-6 text-white/54">{{ shortApi(site.api) }}</p>
           </div>
-          <NSwitch :value="site.enabled" @update:value="(value) => toggleVodSite(site, value)" />
+          <div class="flex shrink-0 items-center gap-3">
+            <NButton
+              round
+              size="small"
+              type="primary"
+              :disabled="!site.enabled || isCurrentSite(site)"
+              :loading="settingCurrentIds.has(site.id)"
+              @click="useVodSite(site)"
+            >
+              <template #icon><CheckCircle2 class="h-4 w-4" /></template>
+              {{ isCurrentSite(site) ? 'Current' : 'Use This' }}
+            </NButton>
+            <NSwitch :value="site.enabled" @update:value="(value) => toggleVodSite(site, value)" />
+          </div>
         </div>
         <p v-if="site.analysis_note" class="mt-3 rounded-2xl border border-white/10 bg-black/18 p-3 text-xs leading-5 text-white/54">
           {{ site.analysis_note }}

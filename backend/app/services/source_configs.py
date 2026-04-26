@@ -48,9 +48,13 @@ async def update_source_config(
     config_id: uuid.UUID,
     payload: SourceConfigUpdate,
 ) -> SourceConfig:
+    from app.services.app_settings import clear_current_vod_site_if_source_matches
+
     config = await get_source_config(db, config_id)
     for key, value in payload.model_dump(mode="json", exclude_unset=True).items():
         setattr(config, key, value)
+    if payload.enabled is False:
+        await clear_current_vod_site_if_source_matches(db, config.id)
     await _commit_or_conflict(db)
     await db.refresh(config)
     return config

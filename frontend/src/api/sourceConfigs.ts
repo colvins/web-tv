@@ -72,6 +72,17 @@ export type VodSite = {
   updated_at: string
 }
 
+export type CurrentVodSite = {
+  id: string
+  source_config_id: string | null
+  site_key: string
+  site_name: string
+  site_type: number | null
+  api: string | null
+  enabled: boolean
+  source_name: string | null
+}
+
 export function listSourceConfigs(): Promise<SourceConfig[]> {
   return apiRequest<SourceConfig[]>('/configs')
 }
@@ -127,5 +138,16 @@ export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {
   return apiRequest<VodSite>(`/vod-sites/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ enabled }),
+  })
+}
+
+export function getCurrentVodSite(): Promise<CurrentVodSite | null> {
+  return apiRequest<CurrentVodSite | null>('/settings/current-vod-site')
+}
+
+export function setCurrentVodSite(vodSiteId: string): Promise<CurrentVodSite> {
+  return apiRequest<CurrentVodSite>('/settings/current-vod-site', {
+    method: 'PUT',
+    body: JSON.stringify({ vod_site_id: vodSiteId }),
   })
 }
