@@ -23,12 +23,13 @@ const query = ref('')
 const loading = ref(false)
 const togglingIds = ref<Set<string>>(new Set())
 const groupScroller = ref<HTMLElement | null>(null)
+const groupPointerDown = ref(false)
 const groupDragging = ref(false)
-const groupDragMoved = ref(false)
-const ignoreNextGroupClick = ref(false)
+const suppressNextGroupClick = ref(false)
 const playback = useLivePlayback()
 
 let searchTimer: number | undefined
+let suppressGroupClickTimer: number | undefined
 let groupDragStartX = 0
 let groupDragStartY = 0
 let groupDragStartScrollLeft = 0
@@ -40,6 +41,11 @@ const selectedGroupName = computed(
 
 async function selectChannel(channel: LiveChannel) {
   await playback.loadChannel(channel)
+}
+
+function clearSuppressGroupClickTimer() {
+  window.clearTimeout(suppressGroupClickTimer)
+  suppressGroupClickTimer = undefined
 }
 
 async function loadLiveData() {
@@ -83,27 +89,29 @@ async function toggleChannel(channel: LiveChannel, enabled: boolean) {
 }
 
 function selectGroup(groupId: string | null) {
-  if (ignoreNextGroupClick.value) {
-    ignoreNextGroupClick.value = false
+  if (suppressNextGroupClick.value) {
+    suppressNextGroupClick.value = false
+    clearSuppressGroupClickTimer()
     return
   }
   selectedGroupId.value = groupId
 }
 
 function startGroupDrag(event: PointerEvent) {
-  if (event.pointerType === 'touch') return
+  if (event.pointerType === 'touch' || event.button !== 0) return
   const scroller = groupScroller.value
   if (!scroller) return
+  groupPointerDown.value = true
   groupDragging.value = false
-  groupDragMoved.value = false
-  ignoreNextGroupClick.value = false
+  suppressNextGroupClick.value = false
+  clearSuppressGroupClickTimer()
   groupDragStartX = event.clientX
   groupDragStartY = event.clientY
   groupDragStartScrollLeft = scroller.scrollLeft
 }
 
 function moveGroupDrag(event: PointerEvent) {
-  if (event.pointerType === 'touch') return
+  if (event.pointerType === 'touch' || !groupPointerDown.value) return
   const scroller = groupScroller.value
   if (!scroller) return
   const deltaX = event.clientX - groupDragStartX
@@ -112,29 +120,28 @@ function moveGroupDrag(event: PointerEvent) {
   if (!groupDragging.value) {
     if (Math.abs(deltaX) < groupDragThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) return
     groupDragging.value = true
-    groupDragMoved.value = true
     scroller.setPointerCapture(event.pointerId)
   }
 
   scroller.scrollLeft = groupDragStartScrollLeft - deltaX
 }
 
-function endGroupDrag(event: PointerEvent) {
-  if (!groupDragging.value) {
-    groupDragMoved.value = false
-    return
-  }
+function resetGroupDrag(event: PointerEvent) {
+  const wasDragging = groupDragging.value
+  groupPointerDown.value = false
   groupDragging.value = false
+
   if (groupScroller.value?.hasPointerCapture(event.pointerId)) {
     groupScroller.value.releasePointerCapture(event.pointerId)
   }
-  if (groupDragMoved.value) {
-    ignoreNextGroupClick.value = true
+
+  if (wasDragging) {
+    suppressNextGroupClick.value = true
+    clearSuppressGroupClickTimer()
+    suppressGroupClickTimer = window.setTimeout(() => {
+      suppressNextGroupClick.value = false
+    }, 250)
   }
-  window.setTimeout(() => {
-    groupDragMoved.value = false
-    ignoreNextGroupClick.value = false
-  }, 0)
 }
 
 watch(query, () => {
@@ -148,6 +155,7 @@ onMounted(loadLiveData)
 
 onBeforeUnmount(() => {
   window.clearTimeout(searchTimer)
+  clearSuppressGroupClickTimer()
 })
 </script>
 
@@ -189,9 +197,10 @@ onBeforeUnmount(() => {
           class="chip-scroller -mx-1 cursor-grab overflow-x-auto overscroll-x-contain px-1 pb-1 active:cursor-grabbing [scrollbar-width:none]"
           @pointerdown="startGroupDrag"
           @pointermove="moveGroupDrag"
-          @pointerup="endGroupDrag"
-          @pointercancel="endGroupDrag"
-          @pointerleave="endGroupDrag"
+          @pointerup="resetGroupDrag"
+          @pointercancel="resetGroupDrag"
+          @pointerleave="resetGroupDrag"
+          @lostpointercapture="resetGroupDrag"
         >
           <div class="flex min-w-max flex-nowrap gap-3">
             <button
