@@ -56,3 +56,10 @@ services:
 volumes:
   postgres_data:
   redis_data:
+
+networks:
+  default:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:dead:cafe:19::/64
