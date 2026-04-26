@@ -20,10 +20,39 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
 
+    import_jobs: Mapped[list["ImportJob"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
+
     __table_args__ = (
         CheckConstraint("source_type IN ('json', 'm3u', 'txt', 'm3u8')", name="ck_source_configs_source_type"),
         UniqueConstraint("name", name="uq_source_configs_name"),
         Index("ix_source_configs_enabled_type", "enabled", "source_type"),
+    )
+
+
+class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "import_jobs"
+
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending", index=True)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(255))
+    content_length: Mapped[int | None] = mapped_column(Integer)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    raw_preview: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+    source_config: Mapped[SourceConfig] = relationship(back_populates="import_jobs")
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'running', 'success', 'failed')", name="ck_import_jobs_status"),
+        Index("ix_import_jobs_source_status", "source_config_id", "status"),
+        Index("ix_import_jobs_created_at", "created_at"),
     )
 
 

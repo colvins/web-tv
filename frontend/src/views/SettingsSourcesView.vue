@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
+  CloudDownload,
   Edit3,
   Plus,
   Power,
@@ -23,8 +24,10 @@ import {
 import {
   createSourceConfig,
   deleteSourceConfig,
+  importSourceConfig,
   listSourceConfigs,
   updateSourceConfig,
+  type ImportJob,
   type SourceConfig,
   type SourceConfigPayload,
   type SourceType,
@@ -35,6 +38,8 @@ const message = useMessage()
 const sources = ref<SourceConfig[]>([])
 const loading = ref(false)
 const saving = ref(false)
+const importingIds = ref<Set<string>>(new Set())
+const latestJob = ref<ImportJob | null>(null)
 const modalOpen = ref(false)
 const deleteTarget = ref<SourceConfig | null>(null)
 const editingSource = ref<SourceConfig | null>(null)
@@ -140,6 +145,25 @@ async function toggleSource(source: SourceConfig, enabled: boolean) {
   }
 }
 
+async function runImport(source: SourceConfig) {
+  importingIds.value = new Set(importingIds.value).add(source.id)
+  try {
+    latestJob.value = await importSourceConfig(source.id)
+    await loadSources()
+    if (latestJob.value.status === 'success') {
+      message.success('Import completed')
+    } else {
+      message.error('Import failed')
+    }
+  } catch (error) {
+    showError(error, 'Unable to import source')
+  } finally {
+    const next = new Set(importingIds.value)
+    next.delete(source.id)
+    importingIds.value = next
+  }
+}
+
 async function confirmDelete() {
   if (!deleteTarget.value) return
   const target = deleteTarget.value
@@ -168,6 +192,17 @@ function formatDate(value: string | null) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function formatBytes(value: number | null) {
+  if (value === null) return 'Unknown'
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(2)} MB`
+}
+
+function shortSha(value: string | null) {
+  return value ? value.slice(0, 12) : 'None'
 }
 
 onMounted(loadSources)
@@ -211,6 +246,38 @@ onMounted(loadSources)
         </div>
       </div>
     </div>
+
+    <article v-if="latestJob" class="glass-panel rounded-[2rem] p-6 sm:p-7">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.28em] text-white/42">Latest Import</p>
+          <h2 class="mt-3 text-2xl font-semibold text-white">
+            {{ latestJob.status }}
+          </h2>
+        </div>
+        <div class="grid gap-3 text-sm text-white/62 sm:grid-cols-3 lg:min-w-[34rem]">
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Type</span>
+            <span class="mt-1 block break-words text-white">{{ latestJob.content_type ?? 'Unknown' }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Length</span>
+            <span class="mt-1 block text-white">{{ formatBytes(latestJob.content_length) }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">SHA256</span>
+            <span class="mt-1 block font-mono text-white">{{ shortSha(latestJob.content_sha256) }}</span>
+          </div>
+        </div>
+      </div>
+      <p v-if="latestJob.error_message" class="mt-5 rounded-2xl border border-red-300/20 bg-red-400/10 p-4 text-red-100">
+        {{ latestJob.error_message }}
+      </p>
+      <pre
+        v-if="latestJob.raw_preview"
+        class="mt-5 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[1.5rem] border border-white/10 bg-black/24 p-5 text-sm leading-6 text-white/68"
+      >{{ latestJob.raw_preview }}</pre>
+    </article>
 
     <div v-if="loading && sources.length === 0" class="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
       <div v-for="index in 3" :key="index" class="glass-panel min-h-64 animate-pulse rounded-[2rem] p-6">
@@ -271,6 +338,15 @@ onMounted(loadSources)
         </div>
 
         <div class="mt-6 flex gap-3">
+          <NButton
+            round
+            type="primary"
+            :loading="importingIds.has(source.id)"
+            @click="runImport(source)"
+          >
+            <template #icon><CloudDownload class="h-4 w-4" /></template>
+            Import
+          </NButton>
           <NButton round secondary class="flex-1" @click="openEditModal(source)">
             <template #icon><Edit3 class="h-4 w-4" /></template>
             Edit

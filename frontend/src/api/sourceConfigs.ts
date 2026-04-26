@@ -22,6 +22,24 @@ export type SourceConfigPayload = {
   enabled: boolean
 }
 
+export type ImportJobStatus = 'pending' | 'running' | 'success' | 'failed'
+
+export type ImportJob = {
+  id: string
+  source_config_id: string
+  status: ImportJobStatus
+  source_url: string
+  content_type: string | null
+  content_length: number | null
+  content_sha256: string | null
+  raw_preview: string | null
+  error_message: string | null
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export function listSourceConfigs(): Promise<SourceConfig[]> {
   return apiRequest<SourceConfig[]>('/configs')
 }
@@ -47,4 +65,18 @@ export function deleteSourceConfig(id: string): Promise<void> {
   return apiRequest<void>(`/configs/${id}`, {
     method: 'DELETE',
   })
+}
+
+export function importSourceConfig(id: string): Promise<ImportJob> {
+  return apiRequest<ImportJob>(`/configs/${id}/import`, {
+    method: 'POST',
+  })
+}
+
+export function listImportJobs(): Promise<ImportJob[]> {
+  return apiRequest<ImportJob[]>('/import-jobs')
+}
+
+export function getImportJob(id: string): Promise<ImportJob> {
+  return apiRequest<ImportJob>(`/import-jobs/${id}`)
 }

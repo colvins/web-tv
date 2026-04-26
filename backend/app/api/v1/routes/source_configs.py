@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.schemas.source_config import SourceConfigCreate, SourceConfigRead, SourceConfigUpdate
-from app.services import source_configs
+from app.schemas.import_job import ImportJobRead
+from app.services import import_jobs, source_configs
 
 router = APIRouter(prefix="/configs", tags=["source-configs"])
 
@@ -41,3 +42,8 @@ async def update_config(
 async def delete_config(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> Response:
     await source_configs.delete_source_config(db, config_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{config_id}/import", response_model=ImportJobRead)
+async def import_config(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> ImportJobRead:
+    return await import_jobs.import_source_config(db, config_id)
