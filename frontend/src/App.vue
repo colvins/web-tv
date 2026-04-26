@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { darkTheme, NConfigProvider, NGlobalStyle } from 'naive-ui'
+import { darkTheme, NConfigProvider, NGlobalStyle, NMessageProvider } from 'naive-ui'
 
 import TvLayout from '@/layouts/TvLayout.vue'
 </script>
 
 <template>
   <NConfigProvider :theme="darkTheme">
-    <NGlobalStyle />
-    <TvLayout />
+    <NMessageProvider>
+      <NGlobalStyle />
+      <TvLayout />
+    </NMessageProvider>
   </NConfigProvider>
 </template>

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,15 +14,16 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     source_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
-    url: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    config: Mapped[JsonDict] = mapped_column(JSONB, nullable=False, default=dict)
-    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_import_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
-        UniqueConstraint("name", "source_type", name="uq_source_configs_name_type"),
-        Index("ix_source_configs_enabled_priority", "enabled", "priority"),
+        CheckConstraint("source_type IN ('json', 'm3u', 'txt', 'm3u8')", name="ck_source_configs_source_type"),
+        UniqueConstraint("name", name="uq_source_configs_name"),
+        Index("ix_source_configs_enabled_type", "enabled", "source_type"),
     )
 
 
