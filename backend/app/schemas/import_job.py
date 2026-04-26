@@ -12,6 +12,16 @@ class ImportJobStatus(StrEnum):
     failed = "failed"
 
 
+class DetectedFormat(StrEnum):
+    plain_json = "plain_json"
+    catvod_json = "catvod_json"
+    m3u = "m3u"
+    txt = "txt"
+    base64_json = "base64_json"
+    binary_wrapped = "binary_wrapped"
+    unknown = "unknown"
+
+
 class ImportJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,6 +33,9 @@ class ImportJobRead(BaseModel):
     content_length: int | None = None
     content_sha256: str | None = None
     raw_preview: str | None = None
+    detected_format: DetectedFormat | None = None
+    detection_confidence: float | None = None
+    detection_note: str | None = None
     error_message: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None

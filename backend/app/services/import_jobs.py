@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ImportJob
+from app.services.source_detection import detect_source_content
 from app.services.source_configs import get_source_config
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
@@ -65,6 +66,9 @@ async def import_source_config(db: AsyncSession, source_config_id: uuid.UUID) ->
     job.content_length = result["content_length"]
     job.content_sha256 = result["content_sha256"]
     job.raw_preview = result["raw_preview"]
+    job.detected_format = result["detected_format"]
+    job.detection_confidence = result["detection_confidence"]
+    job.detection_note = result["detection_note"]
     job.finished_at = finished_at
     source_config.last_import_at = finished_at
     source_config.last_success_at = finished_at
@@ -74,7 +78,7 @@ async def import_source_config(db: AsyncSession, source_config_id: uuid.UUID) ->
     return job
 
 
-async def _download_source(url: str) -> dict[str, str | int | None]:
+async def _download_source(url: str) -> dict[str, str | int | float | None]:
     hasher = hashlib.sha256()
     chunks: list[bytes] = []
     total = 0
@@ -98,9 +102,13 @@ async def _download_source(url: str) -> dict[str, str | int | None]:
 
     raw = b"".join(chunks)
     raw_preview = raw.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")[:RAW_PREVIEW_CHARS]
+    detection = detect_source_content(raw)
     return {
         "content_type": content_type,
         "content_length": total,
         "content_sha256": hasher.hexdigest(),
         "raw_preview": raw_preview,
+        "detected_format": detection.detected_format,
+        "detection_confidence": detection.detection_confidence,
+        "detection_note": detection.detection_note,
     }

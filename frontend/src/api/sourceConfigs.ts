@@ -23,6 +23,14 @@ export type SourceConfigPayload = {
 }
 
 export type ImportJobStatus = 'pending' | 'running' | 'success' | 'failed'
+export type DetectedFormat =
+  | 'plain_json'
+  | 'catvod_json'
+  | 'm3u'
+  | 'txt'
+  | 'base64_json'
+  | 'binary_wrapped'
+  | 'unknown'
 
 export type ImportJob = {
   id: string
@@ -33,6 +41,9 @@ export type ImportJob = {
   content_length: number | null
   content_sha256: string | null
   raw_preview: string | null
+  detected_format: DetectedFormat | null
+  detection_confidence: number | null
+  detection_note: string | null
   error_message: string | null
   started_at: string | null
   finished_at: string | null

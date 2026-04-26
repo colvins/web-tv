@@ -205,6 +205,10 @@ function shortSha(value: string | null) {
   return value ? value.slice(0, 12) : 'None'
 }
 
+function formatConfidence(value: number | null) {
+  return value === null ? 'Unknown' : `${Math.round(value * 100)}%`
+}
+
 onMounted(loadSources)
 </script>
 
@@ -257,6 +261,14 @@ onMounted(loadSources)
         </div>
         <div class="grid gap-3 text-sm text-white/62 sm:grid-cols-3 lg:min-w-[34rem]">
           <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Format</span>
+            <span class="mt-1 block text-white">{{ latestJob.detected_format ?? 'Unknown' }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Confidence</span>
+            <span class="mt-1 block text-white">{{ formatConfidence(latestJob.detection_confidence) }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
             <span class="block text-white/40">Type</span>
             <span class="mt-1 block break-words text-white">{{ latestJob.content_type ?? 'Unknown' }}</span>
           </div>
@@ -270,6 +282,12 @@ onMounted(loadSources)
           </div>
         </div>
       </div>
+      <p
+        v-if="latestJob.detection_note"
+        class="mt-5 rounded-2xl border border-white/10 bg-white/6 p-4 text-sm leading-6 text-white/66"
+      >
+        {{ latestJob.detection_note }}
+      </p>
       <p v-if="latestJob.error_message" class="mt-5 rounded-2xl border border-red-300/20 bg-red-400/10 p-4 text-red-100">
         {{ latestJob.error_message }}
       </p>

@@ -43,6 +43,9 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     content_length: Mapped[int | None] = mapped_column(Integer)
     content_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
     raw_preview: Mapped[str | None] = mapped_column(Text)
+    detected_format: Mapped[str | None] = mapped_column(String(40), index=True)
+    detection_confidence: Mapped[float | None] = mapped_column()
+    detection_note: Mapped[str | None] = mapped_column(Text)
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
@@ -51,6 +54,10 @@ class ImportJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint("status IN ('pending', 'running', 'success', 'failed')", name="ck_import_jobs_status"),
+        CheckConstraint(
+            "detected_format IS NULL OR detected_format IN ('plain_json', 'catvod_json', 'm3u', 'txt', 'base64_json', 'binary_wrapped', 'unknown')",
+            name="ck_import_jobs_detected_format",
+        ),
         Index("ix_import_jobs_source_status", "source_config_id", "status"),
         Index("ix_import_jobs_created_at", "created_at"),
     )
