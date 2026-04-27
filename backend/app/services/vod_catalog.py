@@ -321,10 +321,23 @@ def _play_sources_summary(item: dict[str, Any]) -> list[dict[str, Any]]:
 def _category_rows(categories: list[Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     all_type_ids = {str(category.type_id) for category in categories if category.type_id is not None}
-    synthetic_parents: list[dict[str, Any]] = []
     synthetic_parent_ids: set[str] = set()
 
     for category in categories:
+        parent_type_id = _string_or_none(category.parent_type_id)
+        parent_type_name = _string_or_none(category.parent_type_name)
+        if parent_type_id and parent_type_name and parent_type_id not in all_type_ids and parent_type_id not in synthetic_parent_ids:
+            synthetic_parent_ids.add(parent_type_id)
+            rows.append(
+                {
+                    "type_id": parent_type_id,
+                    "type_name": parent_type_name,
+                    "parent_type_id": None,
+                    "parent_type_name": None,
+                    "has_content": True,
+                }
+            )
+
         rows.append(
             {
                 "type_id": category.type_id,
@@ -335,24 +348,7 @@ def _category_rows(categories: list[Any]) -> list[dict[str, Any]]:
             }
         )
 
-        parent_type_id = _string_or_none(category.parent_type_id)
-        parent_type_name = _string_or_none(category.parent_type_name)
-        if not parent_type_id or not parent_type_name:
-            continue
-        if parent_type_id in all_type_ids or parent_type_id in synthetic_parent_ids:
-            continue
-        synthetic_parent_ids.add(parent_type_id)
-        synthetic_parents.append(
-            {
-                "type_id": parent_type_id,
-                "type_name": parent_type_name,
-                "parent_type_id": None,
-                "parent_type_name": None,
-                "has_content": True,
-            }
-        )
-
-    return [*synthetic_parents, *rows]
+    return rows
 
 
 def _split_sources(value: Any) -> list[str]:

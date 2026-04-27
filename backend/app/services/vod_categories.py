@@ -22,6 +22,71 @@ IMPORT_HEADERS = {
     "Accept": "*/*",
 }
 
+FALLBACK_PARENT_GROUPS: dict[str, tuple[str, ...]] = {
+    "电影": (
+        "动作片",
+        "喜剧片",
+        "爱情片",
+        "科幻片",
+        "恐怖片",
+        "剧情片",
+        "战争片",
+        "纪录片",
+        "动画片",
+        "4K电影",
+        "邵氏电影",
+        "Netflix电影",
+    ),
+    "电视剧": (
+        "国产剧",
+        "欧美剧",
+        "韩剧",
+        "日剧",
+        "港剧",
+        "台剧",
+        "泰剧",
+        "海外剧",
+        "Netflix自制剧",
+    ),
+    "综艺": (
+        "大陆综艺",
+        "日韩综艺",
+        "港台综艺",
+        "欧美综艺",
+        "演唱会",
+        "体育赛事",
+        "篮球",
+        "足球",
+        "斯诺克",
+    ),
+    "动漫": (
+        "国产动漫",
+        "日韩动漫",
+        "欧美动漫",
+        "港台动漫",
+        "海外动漫",
+        "有声动漫",
+        "漫剧",
+    ),
+    "短剧": (
+        "爽文短剧",
+        "女频恋爱",
+        "反转爽剧",
+        "古装仙侠",
+        "年代穿越",
+        "脑洞悬疑",
+        "现代都市",
+        "擦边短剧",
+    ),
+    "伦理": (
+        "港台三级",
+        "韩国伦理",
+        "西方伦理",
+        "日本伦理",
+        "两性课堂",
+        "写真热舞",
+    ),
+}
 
 async def list_categories_for_source(
     db: AsyncSession,
@@ -123,15 +188,22 @@ def parse_categories_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         )
 
     categories: list[dict[str, Any]] = []
+    has_real_parent_structure = False
     for category in raw_categories:
         parent_type_id = _string_or_none(category.get("parent_type_id"))
+        parent_type_name = _string_or_none(category.get("parent_type_name")) or names_by_type_id.get(parent_type_id or "")
+        if parent_type_id or parent_type_name:
+            has_real_parent_structure = True
         categories.append(
             {
                 **category,
-                "parent_type_name": _string_or_none(category.get("parent_type_name")) or names_by_type_id.get(parent_type_id or ""),
+                "parent_type_name": parent_type_name,
             }
         )
-    return categories
+
+    if has_real_parent_structure:
+        return categories
+    return _apply_name_based_parent_fallback(categories)
 
 
 async def _sync_site_categories(
@@ -227,3 +299,63 @@ def _normalized_parent_type_id(value: Any) -> str | None:
     if text in {None, "0"}:
         return None
     return text
+
+
+def _apply_name_based_parent_fallback(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not categories:
+        return categories
+
+    canonical_parent_ids: dict[str, str] = {}
+    for category in categories:
+        type_id = _string_or_none(category.get("type_id"))
+        canonical_name = _canonical_parent_name(category.get("type_name"))
+        if type_id and canonical_name and canonical_name not in canonical_parent_ids:
+            canonical_parent_ids[canonical_name] = type_id
+
+    updated: list[dict[str, Any]] = []
+    for category in categories:
+        if _string_or_none(category.get("parent_type_id")) or _string_or_none(category.get("parent_type_name")):
+            updated.append(category)
+            continue
+
+        parent_name = FALLBACK_CHILD_TO_PARENT.get(_normalize_category_name(category.get("type_name")))
+        if not parent_name:
+            updated.append(category)
+            continue
+
+        updated.append(
+            {
+                **category,
+                "parent_type_id": canonical_parent_ids.get(parent_name, _synthetic_parent_type_id(parent_name)),
+                "parent_type_name": parent_name,
+            }
+        )
+    return updated
+
+
+def _canonical_parent_name(value: Any) -> str | None:
+    normalized = _normalize_category_name(value)
+    if not normalized:
+        return None
+    for parent_name in FALLBACK_PARENT_GROUPS:
+        if normalized == _normalize_category_name(parent_name):
+            return parent_name
+    return None
+
+
+def _normalize_category_name(value: Any) -> str:
+    text = _string_or_none(value)
+    if not text:
+        return ""
+    return "".join(text.replace("/", "").replace("-", "").split()).casefold()
+
+
+def _synthetic_parent_type_id(parent_name: str) -> str:
+    return f"fallback:{_normalize_category_name(parent_name)}"
+
+
+FALLBACK_CHILD_TO_PARENT = {
+    _normalize_category_name(child_name): parent_name
+    for parent_name, child_names in FALLBACK_PARENT_GROUPS.items()
+    for child_name in child_names
+}

@@ -50,6 +50,8 @@ const rootCategories = computed(() =>
 )
 
 const groupedRootCategories = computed(() => rootCategories.value.filter((category) => hasChildren(category.id)))
+const rootLeafCategories = computed(() => rootCategories.value.filter((category) => !hasChildren(category.id)))
+const displayedRootCategories = computed(() => [...groupedRootCategories.value, ...rootLeafCategories.value])
 
 const hasParentStructure = computed(() => groupedRootCategories.value.length > 0)
 
@@ -103,7 +105,9 @@ watch(
       }
       return
     }
-    activeParentId.value = groupedRootCategories.value[0]?.id ?? null
+    if (props.selectedCategoryId === null) {
+      activeParentId.value = null
+    }
   },
   { immediate: true, deep: true },
 )
@@ -123,6 +127,16 @@ function childButtonClass(categoryId: string | null) {
 function selectParent(parentId: string | null) {
   activeParentId.value = parentId
 }
+
+function selectAll() {
+  activeParentId.value = null
+  emit('select', null)
+}
+
+function selectRootLeaf(categoryId: string | null) {
+  activeParentId.value = null
+  emit('select', categoryId)
+}
 </script>
 
 <template>
@@ -132,7 +146,7 @@ function selectParent(parentId: string | null) {
         type="button"
         class="rounded-full border px-4 py-2 text-sm transition"
         :class="childButtonClass(null)"
-        @click="emit('select', null)"
+        @click="selectAll()"
       >
         All
       </button>
@@ -143,12 +157,12 @@ function selectParent(parentId: string | null) {
         <p class="text-xs uppercase tracking-[0.18em] text-white/40">Browse</p>
         <div class="flex flex-wrap gap-3">
           <button
-            v-for="category in rootCategories"
+            v-for="category in displayedRootCategories"
             :key="`${category.id}-${category.type_name}`"
             type="button"
             class="rounded-full border px-4 py-2 text-sm transition"
             :class="hasChildren(category.id) ? parentButtonClass(category.id) : childButtonClass(category.id)"
-            @click="hasChildren(category.id) ? selectParent(category.id) : emit('select', category.id)"
+            @click="hasChildren(category.id) ? selectParent(category.id) : selectRootLeaf(category.id)"
           >
             {{ category.type_name ?? `Type ${category.type_id}` }}
           </button>
