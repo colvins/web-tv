@@ -1,6 +1,7 @@
 import json
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ImportJob, SourceSnapshot
 from app.services.source_configs import get_source_config
-from app.services.source_detection import recover_json_config
+from app.services.source_detection import recover_root_config
 
 MAX_ROOT_CONFIG_JSON_BYTES = 2 * 1024 * 1024
 SPIDER_SUMMARY_CHARS = 500
@@ -30,6 +31,29 @@ async def require_latest_source_snapshot(db: AsyncSession, source_config_id: uui
     if snapshot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source snapshot not found")
     return snapshot
+
+
+def serialize_source_snapshot(snapshot: SourceSnapshot) -> dict[str, Any]:
+    root_config = snapshot.root_config if isinstance(snapshot.root_config, dict) else {}
+    return {
+        "id": snapshot.id,
+        "source_config_id": snapshot.source_config_id,
+        "import_job_id": snapshot.import_job_id,
+        "content_sha256": snapshot.content_sha256,
+        "detected_format": snapshot.detected_format,
+        "recovered_format": snapshot.recovered_format,
+        "root_keys": snapshot.root_keys,
+        "sites_count": snapshot.sites_count,
+        "lives_count": snapshot.lives_count,
+        "parses_count": snapshot.parses_count,
+        "has_spider": snapshot.has_spider,
+        "spider_summary": snapshot.spider_summary,
+        "site_samples": _site_samples(root_config.get("sites")),
+        "live_samples": _live_samples(root_config.get("lives")),
+        "warnings": snapshot.warnings,
+        "created_at": snapshot.created_at,
+        "updated_at": snapshot.updated_at,
+    }
 
 
 async def store_source_snapshot(db: AsyncSession, import_job: ImportJob, content: bytes) -> None:
@@ -74,17 +98,20 @@ def _snapshot_values(import_job: ImportJob, content: bytes) -> dict[str, Any]:
             warnings.append("Recovered M3U text exceeded 2MB snapshot limit and was not stored.")
             recovered_format = "m3u_text_too_large"
 
-    recovered = None if root_config is not None else recover_json_config(content)
+    recovery = None if root_config is not None else recover_root_config(content)
+    recovered = recovery.recovered_value if recovery is not None else None
     if root_config is not None:
         pass
     elif isinstance(recovered, dict):
         serialized = json.dumps(recovered, ensure_ascii=False, separators=(",", ":"))
         if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
             root_config = recovered
-            recovered_format = "json_object"
+            recovered_format = f"{recovery.source_format}_json_object" if recovery is not None else "json_object"
         else:
             warnings.append("Recovered JSON config exceeded 2MB snapshot limit and was not stored.")
-            recovered_format = "json_object_too_large"
+            recovered_format = (
+                f"{recovery.source_format}_json_object_too_large" if recovery is not None else "json_object_too_large"
+            )
     elif recovered is not None:
         warnings.append("Recovered JSON config was not an object and was not stored.")
         recovered_format = "json_non_object"
@@ -128,3 +155,64 @@ def _summary(value: Any) -> str:
     if len(compact) <= SPIDER_SUMMARY_CHARS:
         return compact
     return f"{compact[: SPIDER_SUMMARY_CHARS - 3]}..."
+
+
+def _site_samples(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    samples: list[dict[str, Any]] = []
+    for item in value[:5]:
+        if not isinstance(item, dict):
+            continue
+        samples.append(
+            {
+                "key": item.get("key"),
+                "name": item.get("name"),
+                "type": item.get("type"),
+                "api": item.get("api"),
+                "searchable": item.get("searchable"),
+                "quickSearch": item.get("quickSearch", item.get("quick_search")),
+                "changeable": item.get("changeable"),
+            }
+        )
+    return samples
+
+
+def _live_samples(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    samples: list[dict[str, Any]] = []
+    for item in value[:5]:
+        if isinstance(item, dict):
+            url_value = item.get("url")
+            samples.append(
+                {
+                    "name": item.get("name"),
+                    "type": item.get("type"),
+                    "url_host": _url_host(url_value),
+                    "playerType": item.get("playerType", item.get("player_type")),
+                }
+            )
+            continue
+        if isinstance(item, str):
+            samples.append(
+                {
+                    "name": item[:80],
+                    "type": "string",
+                    "url_host": _url_host(item),
+                    "playerType": None,
+                }
+            )
+    return samples
+
+
+def _url_host(value: Any) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return None
+    return parsed.netloc or None

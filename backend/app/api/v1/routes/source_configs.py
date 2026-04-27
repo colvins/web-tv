@@ -64,7 +64,8 @@ async def extract_live_channels(config_id: uuid.UUID, db: AsyncSession = Depends
 
 @router.get("/{config_id}/snapshot/latest", response_model=SourceSnapshotRead)
 async def get_latest_snapshot(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> SourceSnapshotRead:
-    return await source_snapshots.require_latest_source_snapshot(db, config_id)
+    snapshot = await source_snapshots.require_latest_source_snapshot(db, config_id)
+    return source_snapshots.serialize_source_snapshot(snapshot)
 
 
 @router.get("/{config_id}/vod-sites", response_model=list[VodSiteRead])

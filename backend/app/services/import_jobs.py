@@ -15,6 +15,10 @@ from app.services.source_snapshots import store_source_snapshot
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 RAW_PREVIEW_CHARS = 2000
 REQUEST_TIMEOUT_SECONDS = 20.0
+IMPORT_HEADERS = {
+    "User-Agent": "okhttp/4.10.0",
+    "Accept": "*/*",
+}
 
 
 async def list_import_jobs(db: AsyncSession) -> list[ImportJob]:
@@ -87,7 +91,7 @@ async def _download_source(url: str) -> dict[str, str | int | float | bytes | No
 
     timeout = httpx.Timeout(REQUEST_TIMEOUT_SECONDS)
     async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
-        async with client.stream("GET", url) as response:
+        async with client.stream("GET", url, headers=IMPORT_HEADERS) as response:
             response.raise_for_status()
             content_length_header = response.headers.get("content-length")
             if content_length_header and int(content_length_header) > MAX_IMPORT_BYTES:
