@@ -2,7 +2,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import HTTPException, status
@@ -138,7 +138,11 @@ async def list_channels(
     group_id: uuid.UUID | None = None,
     q: str | None = None,
 ) -> list[LiveChannel]:
-    statement = select(LiveChannel).order_by(LiveChannel.sort_order.asc(), LiveChannel.name.asc())
+    statement = (
+        select(LiveChannel)
+        .where(LiveChannel.enabled.is_(True))
+        .order_by(LiveChannel.sort_order.asc(), LiveChannel.name.asc())
+    )
     if group_id is not None:
         statement = statement.where(LiveChannel.group_id == group_id)
     if q:
@@ -502,11 +506,10 @@ def parse_m3u(text: str) -> tuple[list[ParsedChannel], list[str]]:
             warnings.append(f"Ignored non-http stream URL for {pending['name']}.")
             pending = None
             continue
-        normalized_stream_url = _normalize_import_stream_url(value)
         channels.append(
             ParsedChannel(
                 name=pending["name"],
-                stream_url=normalized_stream_url,
+                stream_url=value,
                 tvg_id=pending["attrs"].get("tvg-id") or None,
                 tvg_name=pending["attrs"].get("tvg-name") or None,
                 tvg_logo=pending["attrs"].get("tvg-logo") or None,
@@ -526,27 +529,6 @@ def _parse_extinf(line: str) -> dict[str, Any]:
     attrs = {match.group(1): match.group(2) for match in ATTR_RE.finditer(line)}
     name = line.rsplit(",", 1)[-1].strip() if "," in line else attrs.get("tvg-name", "Untitled Channel")
     return {"line": line, "attrs": attrs, "name": name or "Untitled Channel"}
-
-
-def _normalize_import_stream_url(stream_url: str) -> str:
-    parsed = urlparse(stream_url)
-    if not parsed.query:
-        return stream_url
-
-    normalized_query: list[tuple[str, str]] = []
-    changed = False
-    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
-        if key == "profile" and value == "pass":
-            normalized_query.append((key, "matroska"))
-            changed = True
-        else:
-            normalized_query.append((key, value))
-
-    if not changed:
-        return stream_url
-
-    return urlunparse(parsed._replace(query=urlencode(normalized_query, doseq=True)))
-
 
 async def _latest_snapshot(db: AsyncSession, source_config_id: uuid.UUID) -> SourceSnapshot | None:
     return await db.scalar(
