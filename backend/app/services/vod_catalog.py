@@ -62,6 +62,7 @@ async def list_vods(
     if type_id:
         params["t"] = type_id
     payload = await _fetch_json(_build_url(candidate.api_url, params))
+    payload = await _fill_missing_posters(candidate, payload)
     return _catalog_page(candidate, payload)
 
 
@@ -78,6 +79,7 @@ async def search_vods(
 
     candidate = await _resolve_candidate_site(db, source_config_id, site_key)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list", "wd": text, "pg": page}))
+    payload = await _fill_missing_posters(candidate, payload)
     return _catalog_page(candidate, payload)
 
 
@@ -318,13 +320,11 @@ def _play_sources_summary(item: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _category_rows(categories: list[Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
+    all_type_ids = {str(category.type_id) for category in categories if category.type_id is not None}
     synthetic_parents: list[dict[str, Any]] = []
     synthetic_parent_ids: set[str] = set()
 
     for category in categories:
-        type_id = str(category.type_id)
-        seen_ids.add(type_id)
         rows.append(
             {
                 "type_id": category.type_id,
@@ -339,7 +339,7 @@ def _category_rows(categories: list[Any]) -> list[dict[str, Any]]:
         parent_type_name = _string_or_none(category.parent_type_name)
         if not parent_type_id or not parent_type_name:
             continue
-        if parent_type_id in seen_ids or parent_type_id in synthetic_parent_ids:
+        if parent_type_id in all_type_ids or parent_type_id in synthetic_parent_ids:
             continue
         synthetic_parent_ids.add(parent_type_id)
         synthetic_parents.append(
@@ -495,3 +495,40 @@ def _int_value(value: Any, default: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+async def _fill_missing_posters(candidate: CollectorSiteCandidate, payload: dict[str, Any]) -> dict[str, Any]:
+    items = payload.get("list")
+    if not isinstance(items, list):
+        return payload
+
+    missing_ids = [
+        str(item.get("vod_id"))
+        for item in items
+        if isinstance(item, dict)
+        and item.get("vod_id") not in (None, "")
+        and not _normalize_media_url(item.get("vod_pic"), candidate.api_url)
+    ]
+    if not missing_ids:
+        return payload
+
+    detail_payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": ",".join(missing_ids)}))
+    detail_items = detail_payload.get("list")
+    if not isinstance(detail_items, list):
+        return payload
+
+    posters_by_id = {
+        str(item.get("vod_id")): _normalize_media_url(item.get("vod_pic"), candidate.api_url)
+        for item in detail_items
+        if isinstance(item, dict) and item.get("vod_id") not in (None, "")
+    }
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        vod_id = item.get("vod_id")
+        if vod_id in (None, "") or _normalize_media_url(item.get("vod_pic"), candidate.api_url):
+            continue
+        poster = posters_by_id.get(str(vod_id))
+        if poster:
+            item["vod_pic"] = poster
+    return payload

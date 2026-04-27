@@ -20,7 +20,7 @@ from app.services.source_detection import (
 )
 from app.services.source_configs import get_source_config
 from app.services.source_snapshots import store_source_snapshot_with_overrides
-from app.services.vod_categories import sync_categories_from_root_config
+from app.services.vod_categories import parse_categories_payload, sync_categories_from_root_config
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 RAW_PREVIEW_CHARS = 2000
@@ -263,28 +263,7 @@ def _category_samples(payload: dict[str, Any]) -> list[str]:
 
 
 def _categories_from_metadata(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    categories = payload.get("class")
-    if not isinstance(categories, list):
-        return []
-
-    parsed: list[dict[str, Any]] = []
-    for index, item in enumerate(categories):
-        if not isinstance(item, dict):
-            continue
-        type_id = _string_or_none(item.get("type_id"))
-        type_name = _string_or_none(item.get("type_name"))
-        if not type_id or not type_name:
-            continue
-        parsed.append(
-            {
-                "type_id": type_id,
-                "type_name": type_name,
-                "parent_type_id": _normalized_parent_type_id(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
-                "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
-                "sort_order": index,
-            }
-        )
-    return parsed
+    return parse_categories_payload(payload)
 
 
 def _string_or_none(value: Any) -> str | None:

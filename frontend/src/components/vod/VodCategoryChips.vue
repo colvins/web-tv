@@ -51,8 +51,6 @@ const rootCategories = computed(() =>
 
 const groupedRootCategories = computed(() => rootCategories.value.filter((category) => hasChildren(category.id)))
 
-const rootLeafCategories = computed(() => rootCategories.value.filter((category) => !hasChildren(category.id)))
-
 const hasParentStructure = computed(() => groupedRootCategories.value.length > 0)
 
 function leafDescendants(parentId: string | null) {
@@ -138,16 +136,6 @@ function selectParent(parentId: string | null) {
       >
         All
       </button>
-      <button
-        v-for="category in hasParentStructure ? rootLeafCategories : normalizedCategories"
-        :key="`${category.id}-${category.type_name}`"
-        type="button"
-        class="rounded-full border px-4 py-2 text-sm transition"
-        :class="childButtonClass(category.id)"
-        @click="emit('select', category.id)"
-      >
-        {{ category.type_name ?? `Type ${category.type_id}` }}
-      </button>
     </div>
 
     <template v-if="hasParentStructure">
@@ -155,14 +143,14 @@ function selectParent(parentId: string | null) {
         <p class="text-xs uppercase tracking-[0.18em] text-white/40">Browse</p>
         <div class="flex flex-wrap gap-3">
           <button
-            v-for="parent in groupedRootCategories"
-            :key="`${parent.id}-${parent.type_name}`"
+            v-for="category in rootCategories"
+            :key="`${category.id}-${category.type_name}`"
             type="button"
             class="rounded-full border px-4 py-2 text-sm transition"
-            :class="parentButtonClass(parent.id)"
-            @click="selectParent(parent.id)"
+            :class="hasChildren(category.id) ? parentButtonClass(category.id) : childButtonClass(category.id)"
+            @click="hasChildren(category.id) ? selectParent(category.id) : emit('select', category.id)"
           >
-            {{ parent.type_name ?? `Type ${parent.type_id}` }}
+            {{ category.type_name ?? `Type ${category.type_id}` }}
           </button>
         </div>
       </div>
@@ -183,5 +171,21 @@ function selectParent(parentId: string | null) {
         </div>
       </div>
     </template>
+
+    <div v-else class="grid gap-3">
+      <p class="text-xs uppercase tracking-[0.18em] text-white/40">Browse</p>
+      <div class="flex flex-wrap gap-3">
+        <button
+          v-for="category in normalizedCategories"
+          :key="`${category.id}-${category.type_name}`"
+          type="button"
+          class="rounded-full border px-4 py-2 text-sm transition"
+          :class="childButtonClass(category.id)"
+          @click="emit('select', category.id)"
+        >
+          {{ category.type_name ?? `Type ${category.type_id}` }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>

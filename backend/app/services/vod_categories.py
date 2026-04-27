@@ -87,11 +87,16 @@ async def _fetch_categories(api_url: str) -> list[dict[str, Any]]:
         response.raise_for_status()
         payload = response.json()
 
+    return parse_categories_payload(payload)
+
+
+def parse_categories_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     items = payload.get("class")
     if not isinstance(items, list):
         return []
 
-    categories: list[dict[str, Any]] = []
+    raw_categories: list[dict[str, Any]] = []
+    names_by_type_id: dict[str, str] = {}
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
@@ -99,13 +104,31 @@ async def _fetch_categories(api_url: str) -> list[dict[str, Any]]:
         type_name = _string_or_none(item.get("type_name"))
         if not type_id or not type_name:
             continue
-        categories.append(
+        names_by_type_id[type_id] = type_name
+        raw_categories.append(
             {
                 "type_id": type_id,
                 "type_name": type_name,
-                "parent_type_id": _normalized_parent_type_id(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
-                "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
+                "parent_type_id": _normalized_parent_type_id(
+                    item.get("type_pid", item.get("parent_id", item.get("pid", item.get("type_pid_1", item.get("type_id_1")))))
+                ),
+                "parent_type_name": _string_or_none(
+                    item.get("parent_name")
+                    or item.get("parent_type_name")
+                    or item.get("type_name_1")
+                    or item.get("parent")
+                ),
                 "sort_order": index,
+            }
+        )
+
+    categories: list[dict[str, Any]] = []
+    for category in raw_categories:
+        parent_type_id = _string_or_none(category.get("parent_type_id"))
+        categories.append(
+            {
+                **category,
+                "parent_type_name": _string_or_none(category.get("parent_type_name")) or names_by_type_id.get(parent_type_id or ""),
             }
         )
     return categories
