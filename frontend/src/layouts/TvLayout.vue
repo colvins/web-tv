@@ -54,7 +54,7 @@ function isNavItemActive(path: string) {
         class="mb-8 flex h-14 w-14 items-center justify-center rounded-3xl bg-white text-lg font-black text-cinema-950 xl:w-full xl:justify-start xl:px-5"
         aria-label="Lets.TV home"
       >
-        <span>TV</span>
+        <span class="text-sm xl:hidden">Lets.TV</span>
         <span class="ml-3 hidden text-base xl:inline">Lets.TV</span>
       </RouterLink>
 
