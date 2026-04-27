@@ -8,11 +8,14 @@ import LivePlayer from '@/components/live/LivePlayer.vue'
 import type { ChannelPlaybackStatus, LivePlayback } from '@/composables/useLivePlayback'
 import type { LiveChannel, LiveChannelGroup } from '@/api/sourceConfigs'
 
+type PlaybackStatusFilter = 'all' | 'playing' | 'failed' | 'unknown'
+
 const props = defineProps<{
   groups: LiveChannelGroup[]
   channels: LiveChannel[]
   selectedGroupId: string | null
   selectedGroupName: string
+  selectedPlaybackStatusFilter: PlaybackStatusFilter
   query: string
   loading: boolean
   togglingIds: Set<string>
@@ -24,6 +27,7 @@ const emit = defineEmits<{
   'update:query': [value: string]
   refresh: []
   selectGroup: [groupId: string | null]
+  selectPlaybackStatusFilter: [filter: PlaybackStatusFilter]
   selectChannel: [channel: LiveChannel]
   toggleChannel: [channel: LiveChannel, enabled: boolean]
 }>()
@@ -32,6 +36,13 @@ const queryModel = computed({
   get: () => props.query,
   set: (value: string) => emit('update:query', value),
 })
+
+const playbackFilterOptions: Array<{ value: PlaybackStatusFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'playing', label: 'Playable' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'unknown', label: 'Untested' },
+]
 
 const groupScroller = ref<HTMLElement | null>(null)
 const stickyLiveArea = ref<HTMLElement | null>(null)
@@ -153,6 +164,22 @@ onBeforeUnmount(() => {
             <template #icon><SlidersHorizontal class="h-4 w-4" /></template>
             Refresh
           </NButton>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="option in playbackFilterOptions"
+            :key="option.value"
+            class="tv-focus-card rounded-full border px-4 py-2 text-xs transition"
+            :class="
+              selectedPlaybackStatusFilter === option.value
+                ? 'border-sky-300/28 bg-sky-400/12 text-white'
+                : 'border-white/10 bg-white/6 text-white/58'
+            "
+            @click="$emit('selectPlaybackStatusFilter', option.value)"
+          >
+            {{ option.label }}
+          </button>
         </div>
 
         <div

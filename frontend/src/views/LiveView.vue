@@ -14,11 +14,14 @@ import {
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 
+type PlaybackStatusFilter = 'all' | 'playing' | 'failed' | 'unknown'
+
 const message = useMessage()
 const groups = ref<LiveChannelGroup[]>([])
 const channels = ref<LiveChannel[]>([])
 const selectedGroupId = ref<string | null>(null)
 const query = ref('')
+const playbackStatusFilter = ref<PlaybackStatusFilter>('all')
 const loading = ref(false)
 const togglingIds = ref<Set<string>>(new Set())
 const isDesktopLayout = ref(true)
@@ -30,6 +33,12 @@ let mediaQuery: MediaQueryList | undefined
 
 const selectedGroupName = computed(
   () => groups.value.find((group) => group.id === selectedGroupId.value)?.name ?? 'All Channels',
+)
+const filteredChannels = computed(() =>
+  channels.value.filter((channel) => {
+    if (playbackStatusFilter.value === 'all') return true
+    return (channelPlaybackStatuses.value[channel.id] ?? 'unknown') === playbackStatusFilter.value
+  }),
 )
 
 function syncLayoutMode() {
@@ -84,6 +93,10 @@ function selectGroup(groupId: string | null) {
   selectedGroupId.value = groupId
 }
 
+function selectPlaybackStatusFilter(filter: PlaybackStatusFilter) {
+  playbackStatusFilter.value = filter
+}
+
 function markChannelPlaybackStatus(channelId: string | null, status: Exclude<ChannelPlaybackStatus, 'unknown'>) {
   if (!channelId) return
 
@@ -133,15 +146,17 @@ onBeforeUnmount(() => {
     v-if="isDesktopLayout"
     v-model:query="query"
     :groups="groups"
-    :channels="channels"
+    :channels="filteredChannels"
     :selected-group-id="selectedGroupId"
     :selected-group-name="selectedGroupName"
+    :selected-playback-status-filter="playbackStatusFilter"
     :loading="loading"
     :toggling-ids="togglingIds"
     :playback="playback"
     :channel-playback-statuses="channelPlaybackStatuses"
     @refresh="loadLiveData"
     @select-group="selectGroup"
+    @select-playback-status-filter="selectPlaybackStatusFilter"
     @select-channel="selectChannel"
     @toggle-channel="toggleChannel"
   />
@@ -149,15 +164,17 @@ onBeforeUnmount(() => {
     v-else
     v-model:query="query"
     :groups="groups"
-    :channels="channels"
+    :channels="filteredChannels"
     :selected-group-id="selectedGroupId"
     :selected-group-name="selectedGroupName"
+    :selected-playback-status-filter="playbackStatusFilter"
     :loading="loading"
     :toggling-ids="togglingIds"
     :playback="playback"
     :channel-playback-statuses="channelPlaybackStatuses"
     @refresh="loadLiveData"
     @select-group="selectGroup"
+    @select-playback-status-filter="selectPlaybackStatusFilter"
     @select-channel="selectChannel"
     @toggle-channel="toggleChannel"
   />
