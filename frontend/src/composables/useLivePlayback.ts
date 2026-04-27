@@ -70,6 +70,7 @@ export function useLivePlayback() {
   let usingMpegtsFallback = false
   let usingBrowserProfileFallback = false
   let lastLoggedErrorSignature = ''
+  const browserPlaybackUrlCache = new Map<string, string | null>()
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
   const shouldPinControlsVisible = computed(() =>
@@ -386,6 +387,44 @@ export function useLivePlayback() {
     video.muted = isMuted.value
 
     const streamUrl = channel.stream_url
+
+    if (isDirectTsStream(streamUrl)) {
+      const cachedBrowserPlaybackUrl = browserPlaybackUrlCache.get(channel.id)
+      if (cachedBrowserPlaybackUrl) {
+        usingBrowserProfileFallback = true
+        video.src = cachedBrowserPlaybackUrl
+        await attemptPlay()
+        return
+      }
+
+      if (!browserPlaybackUrlCache.has(channel.id)) {
+        try {
+          const diagnosis = await diagnoseLiveChannel(channel.id)
+          channelDiagnosis.value = diagnosis
+          browserPlaybackUrlCache.set(channel.id, diagnosis.browser_playback_url)
+
+          if (diagnosis.browser_playback_url) {
+            usingBrowserProfileFallback = true
+            playerStatusText.value = 'Loading browser-friendly stream...'
+            video.src = diagnosis.browser_playback_url
+            await attemptPlay()
+            return
+          }
+
+          if (mpegts.isSupported()) {
+            mpegtsFallbackAttempted = true
+            await startMpegtsFallback(streamUrl)
+            return
+          }
+        } catch {
+          browserPlaybackUrlCache.set(channel.id, null)
+        }
+      } else if (mpegts.isSupported()) {
+        mpegtsFallbackAttempted = true
+        await startMpegtsFallback(streamUrl)
+        return
+      }
+    }
 
     if (isHlsStream(streamUrl)) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
