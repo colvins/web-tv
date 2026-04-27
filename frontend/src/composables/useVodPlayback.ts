@@ -37,6 +37,15 @@ export function useVodPlayback() {
   const nativeHlsSupported = computed(() => !!videoEl.value?.canPlayType('application/vnd.apple.mpegurl'))
   const hlsJsSupported = computed(() => Hls.isSupported())
 
+  function prefersNativeHlsPlayback() {
+    const userAgent = navigator.userAgent
+    const vendor = navigator.vendor
+    const isAppleWebKit = /AppleWebKit/i.test(userAgent)
+    const isSafariBrand = /Safari/i.test(userAgent) && !/(Chrome|Chromium|CriOS|Edg|OPR|FxiOS|Android)/i.test(userAgent)
+    const isAppleVendor = /Apple/i.test(vendor)
+    return isSafariBrand || (isAppleVendor && isAppleWebKit && !Hls.isSupported())
+  }
+
   function setVideoElement(element: unknown) {
     videoEl.value = element instanceof HTMLVideoElement ? element : null
   }
@@ -84,7 +93,7 @@ export function useVodPlayback() {
     video.muted = isMuted.value
 
     if (episode.is_hls_like) {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      if (prefersNativeHlsPlayback() && video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = episode.stream_url
         video.load()
         await attemptPlay()
@@ -202,6 +211,13 @@ export function useVodPlayback() {
   }
 
   function handleVideoError() {
+    const mediaError = videoEl.value?.error
+    console.error('VOD native video error', {
+      code: mediaError?.code ?? null,
+      message: mediaError?.message ?? null,
+      streamHost: currentEpisode.value?.stream_host ?? null,
+      streamTypeGuess: currentEpisode.value?.stream_type_guess ?? null,
+    })
     playbackState.value = 'error'
     playerStatusText.value = 'Episode playback failed.'
     errorMessage.value = 'Browser media playback error.'
