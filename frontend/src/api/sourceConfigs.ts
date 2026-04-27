@@ -11,6 +11,9 @@ export type SourceConfig = {
   last_import_at: string | null
   last_success_at: string | null
   last_error: string | null
+  latest_import_status: ImportJobStatus | null
+  latest_detected_format: DetectedFormat | null
+  latest_snapshot_exists: boolean
   vod_site_count: number
   live_channel_count: number
   created_at: string
@@ -427,12 +430,13 @@ export function extractLiveChannels(sourceConfigId: string): Promise<LiveExtract
   })
 }
 
-export function listLiveGroups(): Promise<LiveChannelGroup[]> {
-  return apiRequest<LiveChannelGroup[]>('/live/groups')
+export function listLiveGroups(sourceConfigId: string): Promise<LiveChannelGroup[]> {
+  const query = new URLSearchParams({ source_config_id: sourceConfigId })
+  return apiRequest<LiveChannelGroup[]>(`/live/groups?${query.toString()}`)
 }
 
-export function listLiveChannels(params: { group_id?: string; q?: string } = {}): Promise<LiveChannel[]> {
-  const query = new URLSearchParams()
+export function listLiveChannels(params: { source_config_id: string; group_id?: string; q?: string }): Promise<LiveChannel[]> {
+  const query = new URLSearchParams({ source_config_id: params.source_config_id })
   if (params.group_id) query.set('group_id', params.group_id)
   if (params.q) query.set('q', params.q)
   const suffix = query.toString() ? `?${query.toString()}` : ''

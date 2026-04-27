@@ -11,17 +11,21 @@ router = APIRouter(prefix="/live", tags=["live"])
 
 
 @router.get("/groups", response_model=list[LiveChannelGroupRead])
-async def list_groups(db: AsyncSession = Depends(get_db)) -> list:
-    return await live_m3u.list_groups(db)
+async def list_groups(
+    source_config_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> list:
+    return await live_m3u.list_groups(db, source_config_id)
 
 
 @router.get("/channels", response_model=list[LiveChannelRead])
 async def list_channels(
+    source_config_id: uuid.UUID,
     group_id: uuid.UUID | None = None,
     q: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> list:
-    return await live_m3u.list_channels(db, group_id=group_id, q=q)
+    return await live_m3u.list_channels(db, source_config_id=source_config_id, group_id=group_id, q=q)
 
 
 @router.patch("/channels/{channel_id}", response_model=LiveChannelRead)

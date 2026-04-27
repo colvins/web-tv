@@ -5,14 +5,12 @@ import { NButton, useMessage } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 
 import {
-  getCurrentVodSite,
   getVodCategories,
   getVodDetail,
   getVodEpisodePlay,
   getVodList,
   listSourceConfigs,
   searchVod,
-  type CurrentVodSite,
   type SourceConfig,
   type VodBrowseCategoriesResponse,
   type VodBrowseDetailResponse,
@@ -27,9 +25,10 @@ import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
 import VodDetailPanel from '@/components/vod/VodDetailPanel.vue'
 import VodSourceSelector from '@/components/vod/VodSourceSelector.vue'
 
+const VOD_SOURCE_STORAGE_KEY = 'webtv.vod.selectedSourceConfigId'
+
 const message = useMessage()
 const sources = ref<SourceConfig[]>([])
-const currentVodSite = ref<CurrentVodSite | null>(null)
 const selectedSourceId = ref<string | null>(null)
 const categoriesResponse = ref<VodBrowseCategoriesResponse | null>(null)
 const pageResponse = ref<VodBrowsePageResponse | null>(null)
@@ -52,7 +51,7 @@ const sourceOptions = computed(() =>
   sources.value
     .filter((source) => source.enabled)
     .map((source) => ({
-      label: `${source.name} · ${source.source_type.toUpperCase()}`,
+      label: `${source.name} · ${source.latest_detected_format ?? source.source_type.toUpperCase()} · VOD ${source.vod_site_count} · ${source.latest_import_status?.toUpperCase() ?? 'NEW'}`,
       value: source.id,
     })),
 )
@@ -68,36 +67,76 @@ const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
 const detailTitle = computed(() => detail.value?.name ?? 'Title detail')
+const enabledSources = computed(() => sources.value.filter((source) => source.enabled))
+
+function restoreSavedSourceId() {
+  return window.localStorage.getItem(VOD_SOURCE_STORAGE_KEY)
+}
+
+function persistSelectedSourceId(sourceId: string | null) {
+  if (sourceId) {
+    window.localStorage.setItem(VOD_SOURCE_STORAGE_KEY, sourceId)
+    return
+  }
+  window.localStorage.removeItem(VOD_SOURCE_STORAGE_KEY)
+}
+
+function resetVodState() {
+  categoriesResponse.value = null
+  pageResponse.value = null
+  detail.value = null
+  detailError.value = null
+  episodeError.value = null
+  episodeLoadingKey.value = null
+  selectedCategoryId.value = null
+  submittedQuery.value = ''
+  searchQuery.value = ''
+  playback.destroyPlayer()
+}
+
+async function fetchSourceCatalog(sourceId: string) {
+  const [categories, page] = await Promise.all([
+    getVodCategories(sourceId),
+    getVodList({
+      source_config_id: sourceId,
+      page: 1,
+    }),
+  ])
+  return { categories, page }
+}
 
 async function bootstrap() {
   loading.value = true
   loadError.value = null
-  noUsableSource.value = false
   try {
-    const [sourceList, current] = await Promise.all([listSourceConfigs(), getCurrentVodSite()])
+    const sourceList = await listSourceConfigs()
     sources.value = sourceList
-    currentVodSite.value = current
 
-    const enabledSources = sourceList.filter((source) => source.enabled)
-    if (enabledSources.length === 0) {
-      noUsableSource.value = true
+    const enabledIds = new Set(sourceList.filter((source) => source.enabled).map((source) => source.id))
+    const currentSelection = selectedSourceId.value
+    const savedSelection = restoreSavedSourceId()
+
+    const preferredSourceId =
+      (currentSelection && enabledIds.has(currentSelection) ? currentSelection : null) ??
+      (savedSelection && enabledIds.has(savedSelection) ? savedSelection : null)
+
+    if (preferredSourceId) {
+      await loadSource(preferredSourceId, { quiet: true, preserveSelectionOnFailure: true })
       return
     }
 
-    const candidateIds = [
-      ...(current?.source_config_id ? [current.source_config_id] : []),
-      ...enabledSources.map((source) => source.id),
-    ].filter((value, index, values) => Boolean(value) && values.indexOf(value) === index) as string[]
-
-    let resolved = false
+    const candidateIds = enabledSources.value.map((source) => source.id)
     for (const sourceId of candidateIds) {
       const success = await loadSource(sourceId, { quiet: true })
       if (success) {
-        resolved = true
-        break
+        return
       }
     }
-    noUsableSource.value = !resolved
+
+    selectedSourceId.value = null
+    persistSelectedSourceId(null)
+    resetVodState()
+    noUsableSource.value = true
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD sources'
   } finally {
@@ -105,30 +144,29 @@ async function bootstrap() {
   }
 }
 
-async function loadSource(sourceId: string, options: { quiet?: boolean } = {}) {
+async function loadSource(
+  sourceId: string,
+  options: { quiet?: boolean; preserveSelectionOnFailure?: boolean } = {},
+) {
   sourceLoading.value = true
   loadError.value = null
+  noUsableSource.value = false
   try {
-    const categories = await getVodCategories(sourceId)
+    const catalog = await fetchSourceCatalog(sourceId)
     selectedSourceId.value = sourceId
-    categoriesResponse.value = categories
-    detail.value = null
-    detailError.value = null
-    episodeError.value = null
-    playback.destroyPlayer()
-    selectedCategoryId.value = null
-    submittedQuery.value = ''
-    searchQuery.value = ''
-    await loadListPage(1, sourceId)
-    noUsableSource.value = false
+    persistSelectedSourceId(sourceId)
+    resetVodState()
+    categoriesResponse.value = catalog.categories
+    pageResponse.value = catalog.page
     return true
   } catch (error) {
+    if (options.preserveSelectionOnFailure) {
+      selectedSourceId.value = sourceId
+      persistSelectedSourceId(sourceId)
+    }
+    resetVodState()
     if (!options.quiet) {
       loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD categories'
-    }
-    if (selectedSourceId.value === sourceId) {
-      pageResponse.value = null
-      categoriesResponse.value = null
     }
     return false
   } finally {
@@ -247,8 +285,13 @@ async function changePage(direction: -1 | 1) {
 }
 
 function onSourceChange(value: string | null) {
-  if (!value) return
-  void loadSource(value)
+  if (!value) {
+    selectedSourceId.value = null
+    persistSelectedSourceId(null)
+    resetVodState()
+    return
+  }
+  void loadSource(value, { preserveSelectionOnFailure: true })
 }
 
 onMounted(bootstrap)
@@ -323,7 +366,6 @@ onMounted(bootstrap)
       <VodSourceSelector
         :source-options="sourceOptions"
         :selected-source-id="selectedSourceId"
-        :current-vod-source-id="currentVodSite?.source_config_id ?? null"
         :search-query="searchQuery"
         :loading="loading"
         :source-loading="sourceLoading"
@@ -351,7 +393,20 @@ onMounted(bootstrap)
     </template>
 
     <div
-      v-if="!loading && !sourceLoading && !searchLoading && !noUsableSource && !pageResponse?.items.length"
+      v-if="!loading && !noUsableSource && !selectedSourceId"
+      class="glass-panel flex min-h-[18rem] items-end rounded-[2.5rem] p-7 sm:p-10"
+    >
+      <div class="max-w-3xl">
+        <p class="text-sm uppercase tracking-[0.28em] text-white/42">No source selected</p>
+        <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">Choose a VOD source to begin browsing</h2>
+        <p class="mt-5 text-base leading-7 text-white/58">
+          Pick one imported source package from the selector to bind all VOD browsing requests to that source_config_id.
+        </p>
+      </div>
+    </div>
+
+    <div
+      v-if="!loading && !sourceLoading && !searchLoading && !noUsableSource && selectedSourceId && !pageResponse?.items.length"
       class="glass-panel flex min-h-[18rem] items-end rounded-[2.5rem] p-7 sm:p-10"
     >
       <div class="max-w-3xl">

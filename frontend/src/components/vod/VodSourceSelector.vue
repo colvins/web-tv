@@ -5,7 +5,6 @@ import { NButton, NInput, NSelect } from 'naive-ui'
 defineProps<{
   sourceOptions: Array<{ label: string; value: string }>
   selectedSourceId: string | null
-  currentVodSourceId: string | null
   searchQuery: string
   loading: boolean
   sourceLoading: boolean
@@ -34,9 +33,6 @@ const emit = defineEmits<{
           :loading="loading || sourceLoading"
           @update:value="(value) => emit('update:selectedSourceId', value)"
         />
-        <p v-if="currentVodSourceId === selectedSourceId" class="mt-3 text-xs text-white/48">
-          Current VOD selection points at this source package.
-        </p>
       </div>
 
       <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">

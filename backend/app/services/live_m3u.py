@@ -126,21 +126,26 @@ async def extract_live_channels(db: AsyncSession, source_config_id: uuid.UUID) -
     }
 
 
-async def list_groups(db: AsyncSession) -> list[LiveChannelGroup]:
+async def list_groups(db: AsyncSession, source_config_id: uuid.UUID) -> list[LiveChannelGroup]:
+    await get_source_config(db, source_config_id)
     result = await db.scalars(
-        select(LiveChannelGroup).order_by(LiveChannelGroup.sort_order.asc(), LiveChannelGroup.name.asc())
+        select(LiveChannelGroup)
+        .where(LiveChannelGroup.source_config_id == source_config_id)
+        .order_by(LiveChannelGroup.sort_order.asc(), LiveChannelGroup.name.asc())
     )
     return list(result)
 
 
 async def list_channels(
     db: AsyncSession,
+    source_config_id: uuid.UUID,
     group_id: uuid.UUID | None = None,
     q: str | None = None,
 ) -> list[LiveChannel]:
+    await get_source_config(db, source_config_id)
     statement = (
         select(LiveChannel)
-        .where(LiveChannel.enabled.is_(True))
+        .where(LiveChannel.enabled.is_(True), LiveChannel.source_config_id == source_config_id)
         .order_by(LiveChannel.sort_order.asc(), LiveChannel.name.asc())
     )
     if group_id is not None:

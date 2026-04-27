@@ -5,7 +5,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import SourceConfig
+from app.db.models import ImportJob, SourceConfig, SourceSnapshot
 from app.schemas.source_config import SourceConfigCreate, SourceConfigUpdate
 
 
@@ -19,11 +19,12 @@ async def list_source_configs(db: AsyncSession) -> list[SourceConfig]:
 
     result = await db.scalars(_ordered_query())
     configs = list(result)
-    counts = await count_vod_sites_by_source(db)
-    live_counts = await count_live_channels_by_source(db)
-    for config in configs:
-        config.vod_site_count = counts.get(config.id, 0)
-        config.live_channel_count = live_counts.get(config.id, 0)
+    await _populate_source_config_metadata(
+        db,
+        configs,
+        vod_counts=await count_vod_sites_by_source(db),
+        live_counts=await count_live_channels_by_source(db),
+    )
     return configs
 
 
@@ -34,10 +35,12 @@ async def get_source_config(db: AsyncSession, config_id: uuid.UUID) -> SourceCon
     config = await db.get(SourceConfig, config_id)
     if config is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Source config not found")
-    counts = await count_vod_sites_by_source(db)
-    live_counts = await count_live_channels_by_source(db)
-    config.vod_site_count = counts.get(config.id, 0)
-    config.live_channel_count = live_counts.get(config.id, 0)
+    await _populate_source_config_metadata(
+        db,
+        [config],
+        vod_counts=await count_vod_sites_by_source(db),
+        live_counts=await count_live_channels_by_source(db),
+    )
     return config
 
 
@@ -81,3 +84,51 @@ async def _commit_or_conflict(db: AsyncSession) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="Source config conflicts with an existing record",
         ) from exc
+
+
+async def _populate_source_config_metadata(
+    db: AsyncSession,
+    configs: list[SourceConfig],
+    *,
+    vod_counts: dict[uuid.UUID, int],
+    live_counts: dict[uuid.UUID, int],
+) -> None:
+    if not configs:
+        return
+
+    config_ids = [config.id for config in configs]
+    latest_imports = await _latest_imports_by_source(db, config_ids)
+    snapshot_ids = await _snapshot_source_ids(db, config_ids)
+
+    for config in configs:
+        config.vod_site_count = vod_counts.get(config.id, 0)
+        config.live_channel_count = live_counts.get(config.id, 0)
+        latest_import = latest_imports.get(config.id)
+        config.latest_import_status = latest_import.status if latest_import else None
+        config.latest_detected_format = latest_import.detected_format if latest_import else None
+        config.latest_snapshot_exists = config.id in snapshot_ids
+
+
+async def _latest_imports_by_source(
+    db: AsyncSession,
+    config_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, ImportJob]:
+    result = await db.scalars(
+        select(ImportJob)
+        .where(ImportJob.source_config_id.in_(config_ids))
+        .order_by(ImportJob.source_config_id.asc(), ImportJob.created_at.desc(), ImportJob.updated_at.desc())
+    )
+    latest: dict[uuid.UUID, ImportJob] = {}
+    for job in result:
+        if job.source_config_id not in latest:
+            latest[job.source_config_id] = job
+    return latest
+
+
+async def _snapshot_source_ids(db: AsyncSession, config_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    rows = await db.scalars(
+        select(SourceSnapshot.source_config_id)
+        .where(SourceSnapshot.source_config_id.in_(config_ids))
+        .distinct()
+    )
+    return set(rows)

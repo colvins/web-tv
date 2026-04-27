@@ -152,6 +152,16 @@ export function useLivePlayback() {
     video.load()
   }
 
+  function clearSelectedChannel() {
+    destroyPlayer()
+    selectedChannel.value = null
+    playbackState.value = 'idle'
+    clearPlaybackError()
+    playerStatusText.value = 'Select a channel to start playback.'
+    isPlaying.value = false
+    revealControls()
+  }
+
   function getStreamHost(streamUrl: string | null | undefined) {
     if (!streamUrl) return 'unknown-host'
 
@@ -839,6 +849,7 @@ export function useLivePlayback() {
     loadChannel,
     runChannelDiagnosis,
     destroyPlayer,
+    clearSelectedChannel,
     togglePlayback,
     toggleMute,
     toggleFullscreen,
