@@ -45,6 +45,32 @@ const emit = defineEmits<{
 
 <template>
   <section class="grid gap-6">
+    <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+      <div class="min-w-0">
+        <p class="text-sm uppercase tracking-[0.28em] text-white/42">WEB-TV</p>
+        <h1 class="mt-3 truncate text-3xl font-semibold text-white sm:text-5xl">
+          {{ headerSourceName }}
+        </h1>
+      </div>
+
+      <div class="w-full xl:max-w-[60rem]">
+        <VodSourceSelector
+          :source-options="sourceOptions"
+          :selected-source-id="selectedSourceId"
+          :search-query="searchQuery"
+          :loading="loading"
+          :source-loading="sourceLoading"
+          :search-loading="searchLoading"
+          :has-search-filter="hasSearchFilter"
+          @refresh="emit('refresh')"
+          @update:selected-source-id="(value) => emit('update:selectedSourceId', value)"
+          @update:search-query="(value) => emit('update:searchQuery', value)"
+          @search="emit('search')"
+          @reset="emit('reset')"
+        />
+      </div>
+    </div>
+
     <div v-if="loadError" class="glass-panel rounded-[2rem] border border-red-300/18 bg-red-400/10 p-5 text-red-100">
       {{ loadError }}
     </div>
@@ -61,21 +87,6 @@ const emit = defineEmits<{
     </div>
 
     <template v-else>
-      <VodSourceSelector
-        :source-options="sourceOptions"
-        :selected-source-id="selectedSourceId"
-        :search-query="searchQuery"
-        :loading="loading"
-        :source-loading="sourceLoading"
-        :search-loading="searchLoading"
-        :has-search-filter="hasSearchFilter"
-        @refresh="emit('refresh')"
-        @update:selected-source-id="(value) => emit('update:selectedSourceId', value)"
-        @update:search-query="(value) => emit('update:searchQuery', value)"
-        @search="emit('search')"
-        @reset="emit('reset')"
-      />
-
       <article class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
         <VodCategoryChips
           :categories="categories"

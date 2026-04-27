@@ -45,21 +45,12 @@ const emit = defineEmits<{
 
 <template>
   <section class="grid gap-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
-    <div v-if="loadError" class="glass-panel rounded-[1.5rem] border border-red-300/18 bg-red-400/10 p-4 text-red-100">
-      {{ loadError }}
-    </div>
-
-    <div
-      v-if="!loading && noUsableSource"
-      class="glass-panel flex min-h-[16rem] items-end rounded-[1.75rem] p-5"
-    >
-      <div>
-        <p class="text-xs uppercase tracking-[0.24em] text-white/42">没有可用源</p>
-        <h2 class="mt-3 text-2xl font-semibold text-white">当前没有可浏览的 VOD 源</h2>
+    <div class="grid gap-4">
+      <div class="min-w-0">
+        <p class="text-xs uppercase tracking-[0.24em] text-white/42">WEB-TV</p>
+        <h1 class="mt-2 truncate text-2xl font-semibold text-white">{{ headerSourceName }}</h1>
       </div>
-    </div>
 
-    <template v-else>
       <VodSourceSelector
         compact
         :source-options="sourceOptions"
@@ -75,7 +66,23 @@ const emit = defineEmits<{
         @search="emit('search')"
         @reset="emit('reset')"
       />
+    </div>
 
+    <div v-if="loadError" class="glass-panel rounded-[1.5rem] border border-red-300/18 bg-red-400/10 p-4 text-red-100">
+      {{ loadError }}
+    </div>
+
+    <div
+      v-if="!loading && noUsableSource"
+      class="glass-panel flex min-h-[16rem] items-end rounded-[1.75rem] p-5"
+    >
+      <div>
+        <p class="text-xs uppercase tracking-[0.24em] text-white/42">没有可用源</p>
+        <h2 class="mt-3 text-2xl font-semibold text-white">当前没有可浏览的 VOD 源</h2>
+      </div>
+    </div>
+
+    <template v-else>
       <article class="glass-panel rounded-[1.5rem] p-4">
         <VodCategoryChips
           compact
