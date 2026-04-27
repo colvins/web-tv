@@ -1,4 +1,5 @@
 import Hls from 'hls.js'
+import mpegts from 'mpegts.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { diagnoseLiveChannel, type LiveChannel, type LiveChannelDiagnosis } from '@/api/sourceConfigs'
@@ -61,8 +62,11 @@ export function useLivePlayback() {
   const playerFocused = ref(false)
 
   let hls: Hls | null = null
+  let mpegtsPlayer: mpegts.Player | null = null
   let controlsHideTimer: number | undefined
   let hlsMediaRecoveryAttempted = false
+  let mpegtsFallbackAttempted = false
+  let usingMpegtsFallback = false
   let lastLoggedErrorSignature = ''
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
@@ -127,7 +131,13 @@ export function useLivePlayback() {
     clearControlsHideTimer()
     hls?.destroy()
     hls = null
+    mpegtsPlayer?.unload()
+    mpegtsPlayer?.detachMediaElement()
+    mpegtsPlayer?.destroy()
+    mpegtsPlayer = null
     hlsMediaRecoveryAttempted = false
+    mpegtsFallbackAttempted = false
+    usingMpegtsFallback = false
     channelDiagnosis.value = null
     channelDiagnosisLoading.value = false
     channelDiagnosisError.value = ''
@@ -161,6 +171,10 @@ export function useLivePlayback() {
       return 'direct_ts'
     }
     return 'unknown_stream'
+  }
+
+  function isDirectTsStream(url: string) {
+    return guessStreamType(url) === 'direct_ts'
   }
 
   function logPlaybackFailure(error: PlaybackErrorInfo) {
@@ -433,6 +447,48 @@ export function useLivePlayback() {
     await attemptPlay()
   }
 
+  async function startMpegtsFallback(streamUrl: string) {
+    const video = videoEl.value
+    if (!video || !mpegts.isSupported()) {
+      setPlaybackError(buildPlaybackError('unsupported_format', 'MPEG-TS fallback is not supported in this browser'))
+      return
+    }
+
+    hls?.destroy()
+    hls = null
+    mpegtsPlayer?.unload()
+    mpegtsPlayer?.detachMediaElement()
+    mpegtsPlayer?.destroy()
+    mpegtsPlayer = null
+
+    usingMpegtsFallback = true
+    playbackState.value = 'loading'
+    playerStatusText.value = 'Retrying stream with TS fallback...'
+    revealControls()
+
+    mpegtsPlayer = mpegts.createPlayer(
+      {
+        type: 'mpegts',
+        isLive: true,
+        url: streamUrl,
+      },
+      {
+        enableWorker: true,
+        lazyLoad: false,
+        liveBufferLatencyChasing: true,
+        liveSync: true,
+      },
+    )
+
+    mpegtsPlayer.on(mpegts.Events.ERROR, (errorType: string, errorDetail: string, errorInfo: unknown) => {
+      const detail = [errorType, errorDetail, errorInfo ? JSON.stringify(errorInfo) : ''].filter(Boolean).join(' | ')
+      setPlaybackError(buildPlaybackError('stream_load_error', detail))
+    })
+    mpegtsPlayer.attachMediaElement(video)
+    mpegtsPlayer.load()
+    await attemptPlay()
+  }
+
   async function runChannelDiagnosis() {
     if (!selectedChannel.value) return
 
@@ -541,11 +597,27 @@ export function useLivePlayback() {
   }
 
   function handleVideoError() {
+    const mediaError = videoEl.value?.error ?? null
     nativeVideoError.value = {
-      code: getNativeVideoErrorCodeLabel(videoEl.value?.error ?? null),
-      message: videoEl.value?.error?.message || 'Media element reported an error.',
+      code: getNativeVideoErrorCodeLabel(mediaError),
+      message: mediaError?.message || 'Media element reported an error.',
     }
-    setPlaybackError(classifyNativeVideoError(videoEl.value?.error ?? null))
+
+    const streamUrl = selectedChannel.value?.stream_url ?? ''
+    const shouldTryMpegtsFallback =
+      !usingMpegtsFallback &&
+      !mpegtsFallbackAttempted &&
+      isDirectTsStream(streamUrl) &&
+      mpegts.isSupported() &&
+      mediaError?.code !== MediaError.MEDIA_ERR_ABORTED
+
+    if (shouldTryMpegtsFallback) {
+      mpegtsFallbackAttempted = true
+      void startMpegtsFallback(streamUrl)
+      return
+    }
+
+    setPlaybackError(classifyNativeVideoError(mediaError))
   }
 
   function handleVolumeChange() {
