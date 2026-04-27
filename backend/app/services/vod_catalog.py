@@ -14,6 +14,8 @@ from app.services import source_snapshots
 from app.services.source_configs import get_source_config
 
 REQUEST_TIMEOUT_SECONDS = 10
+MANUAL_TEST_SOURCE_ID = uuid.UUID("4783cb6a-1db9-4dfa-9753-dfbe20567557")
+MANUAL_TEST_OVERRIDE_COLLECTOR_URL = "https://api.yzzy-api.com/inc/api_mac10.php"
 
 
 @dataclass(frozen=True)
@@ -128,6 +130,10 @@ async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID)
     if not source_config.enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Source config must be enabled for VOD browsing")
 
+    override = _override_candidate_site(source_config.id, source_config.name)
+    if override is not None:
+        return override
+
     snapshot = await source_snapshots.require_latest_source_snapshot(db, source_config_id)
     root_config = snapshot.root_config if isinstance(snapshot.root_config, dict) else {}
     sites = root_config.get("sites")
@@ -141,6 +147,18 @@ async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID)
             detail="No generic MacCMS-style JSON collector site was found in the latest source snapshot",
         )
     return candidates[0]
+
+
+def _override_candidate_site(source_config_id: uuid.UUID, source_name: str) -> CollectorSiteCandidate | None:
+    if source_config_id != MANUAL_TEST_SOURCE_ID:
+        return None
+    return CollectorSiteCandidate(
+        source_config_id=source_config_id,
+        source_name=source_name,
+        site_key="yzzy",
+        site_name="YZZY Test Collector",
+        api_url=MANUAL_TEST_OVERRIDE_COLLECTOR_URL,
+    )
 
 
 def _collector_candidates(
@@ -197,7 +215,11 @@ def _collector_candidates(
 
 def _looks_like_maccms_collector(url: str) -> bool:
     lowered = url.lower()
-    return "api.php/provide/vod" in lowered or ("provide/vod" in lowered and "ac=" in lowered)
+    return (
+        "api.php/provide/vod" in lowered
+        or ("provide/vod" in lowered and "ac=" in lowered)
+        or "api_mac10.php" in lowered
+    )
 
 
 async def _fetch_json(url: str) -> dict[str, Any]:
