@@ -25,18 +25,58 @@ const normalizedCategories = computed(() =>
   })),
 )
 
-const hasParentStructure = computed(() =>
-  normalizedCategories.value.some((category) => category.parentId && category.parentId !== category.id),
+const categoriesById = computed(() => {
+  const entries = normalizedCategories.value
+    .filter((category): category is (typeof normalizedCategories.value)[number] & { id: string } => Boolean(category.id))
+    .map((category) => [category.id, category] as const)
+  return new Map(entries)
+})
+
+const childrenByParentId = computed(() => {
+  const mapping = new Map<string, typeof normalizedCategories.value>()
+  for (const category of normalizedCategories.value) {
+    if (!category.parentId || category.parentId === category.id) continue
+    const existing = mapping.get(category.parentId) ?? []
+    existing.push(category)
+    mapping.set(category.parentId, existing)
+  }
+  return mapping
+})
+
+const hasChildren = (categoryId: string | null) => Boolean(categoryId && childrenByParentId.value.get(categoryId)?.length)
+
+const rootCategories = computed(() =>
+  normalizedCategories.value.filter((category) => !category.parentId || !categoriesById.value.has(category.parentId)),
 )
 
-const parentCategories = computed(() => {
-  if (!hasParentStructure.value) return []
-  return normalizedCategories.value.filter((category) => !category.parentId || category.parentId === category.id)
-})
+const groupedRootCategories = computed(() => rootCategories.value.filter((category) => hasChildren(category.id)))
+
+const rootLeafCategories = computed(() => rootCategories.value.filter((category) => !hasChildren(category.id)))
+
+const hasParentStructure = computed(() => groupedRootCategories.value.length > 0)
+
+function leafDescendants(parentId: string | null) {
+  if (!parentId) return []
+
+  const leaves: typeof normalizedCategories.value = []
+  const stack = [...(childrenByParentId.value.get(parentId) ?? [])]
+
+  while (stack.length) {
+    const category = stack.shift()
+    if (!category) continue
+    if (hasChildren(category.id)) {
+      stack.push(...(childrenByParentId.value.get(category.id ?? '') ?? []))
+      continue
+    }
+    leaves.push(category)
+  }
+
+  return leaves
+}
 
 const childCategories = computed(() => {
   if (!hasParentStructure.value || !activeParentId.value) return []
-  return normalizedCategories.value.filter((category) => category.parentId === activeParentId.value && category.id !== activeParentId.value)
+  return leafDescendants(activeParentId.value)
 })
 
 watch(
@@ -48,15 +88,24 @@ watch(
     }
 
     const selected = normalizedCategories.value.find((category) => category.id === props.selectedCategoryId)
-    if (selected?.parentId) {
-      activeParentId.value = selected.parentId
-      return
-    }
-    if (selected?.id) {
+    if (selected?.id && hasChildren(selected.id)) {
       activeParentId.value = selected.id
       return
     }
-    activeParentId.value = parentCategories.value[0]?.id ?? null
+    if (selected?.parentId) {
+      let currentParentId: string | null = selected.parentId
+      while (currentParentId) {
+        const parentCategory = categoriesById.value.get(currentParentId)
+        if (!parentCategory) break
+        if (hasChildren(parentCategory.id)) {
+          activeParentId.value = parentCategory.id
+          return
+        }
+        currentParentId = parentCategory.parentId
+      }
+      return
+    }
+    activeParentId.value = groupedRootCategories.value[0]?.id ?? null
   },
   { immediate: true, deep: true },
 )
@@ -89,18 +138,16 @@ function selectParent(parentId: string | null) {
       >
         All
       </button>
-      <template v-if="!hasParentStructure">
-        <button
-          v-for="category in normalizedCategories"
-          :key="`${category.id}-${category.type_name}`"
-          type="button"
-          class="rounded-full border px-4 py-2 text-sm transition"
-          :class="childButtonClass(category.id)"
-          @click="emit('select', category.id)"
-        >
-          {{ category.type_name ?? `Type ${category.type_id}` }}
-        </button>
-      </template>
+      <button
+        v-for="category in hasParentStructure ? rootLeafCategories : normalizedCategories"
+        :key="`${category.id}-${category.type_name}`"
+        type="button"
+        class="rounded-full border px-4 py-2 text-sm transition"
+        :class="childButtonClass(category.id)"
+        @click="emit('select', category.id)"
+      >
+        {{ category.type_name ?? `Type ${category.type_id}` }}
+      </button>
     </div>
 
     <template v-if="hasParentStructure">
@@ -108,7 +155,7 @@ function selectParent(parentId: string | null) {
         <p class="text-xs uppercase tracking-[0.18em] text-white/40">Browse</p>
         <div class="flex flex-wrap gap-3">
           <button
-            v-for="parent in parentCategories"
+            v-for="parent in groupedRootCategories"
             :key="`${parent.id}-${parent.type_name}`"
             type="button"
             class="rounded-full border px-4 py-2 text-sm transition"
