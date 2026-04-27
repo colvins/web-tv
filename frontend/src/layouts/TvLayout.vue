@@ -79,7 +79,7 @@ function isNavItemActive(path: string) {
     <main class="px-5 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8 lg:ml-32 lg:px-10 lg:pt-6 xl:ml-72">
       <header
         class="mb-6 flex flex-col gap-4 sm:mb-8"
-        :class="isVodCatalogRoute ? 'sm:flex-row sm:items-start sm:justify-between' : 'sm:flex-row sm:items-center sm:justify-between'"
+        :class="isVodCatalogRoute ? 'items-start sm:flex-row sm:items-start sm:justify-between' : 'sm:flex-row sm:items-center sm:justify-between'"
       >
         <div class="min-w-0">
           <p class="text-sm uppercase tracking-[0.32em] text-white/42">web-tv</p>
@@ -90,7 +90,7 @@ function isNavItemActive(path: string) {
         <div
           v-if="isVodCatalogRoute"
           id="vod-page-toolbar"
-          class="flex w-full justify-end sm:w-auto sm:max-w-[11rem] lg:max-w-none"
+          class="flex w-full justify-end self-end sm:w-auto sm:self-auto sm:max-w-[11rem] lg:max-w-none"
         ></div>
         <RouterLink
           v-else

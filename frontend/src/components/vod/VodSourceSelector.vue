@@ -17,13 +17,13 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex w-full justify-end sm:w-auto">
-    <div class="flex min-w-0 items-center" :class="compact ? 'gap-2' : 'gap-3'">
+  <div class="flex w-fit max-w-full justify-end self-end sm:w-auto">
+    <div class="flex min-w-0 max-w-full items-center" :class="compact ? 'gap-1.5' : 'gap-3'">
       <NInput
         :value="searchQuery"
         round
         class="min-w-0"
-        :class="compact ? 'vod-search-input-compact w-[4.5rem] shrink-0' : 'w-[11rem] xl:w-[12rem]'"
+        :class="compact ? 'vod-search-input-compact w-[4rem] shrink' : 'w-[11rem] xl:w-[12rem]'"
         placeholder="Search titles"
         clearable
         @update:value="(value) => emit('update:searchQuery', value)"
@@ -33,7 +33,7 @@ const emit = defineEmits<{
         :round="true"
         type="primary"
         :size="compact ? 'small' : 'medium'"
-        :class="compact ? 'w-8 min-w-8 px-0' : ''"
+        :class="compact ? 'w-7 min-w-7 px-0' : ''"
         :loading="searchLoading"
         @click="emit('search')"
       >
