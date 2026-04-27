@@ -65,9 +65,11 @@ export function useLivePlayback() {
   let mpegtsPlayer: mpegts.Player | null = null
   let controlsHideTimer: number | undefined
   let hlsMediaRecoveryAttempted = false
+  let diagnosedHlsRetryAttempted = false
   let mpegtsFallbackAttempted = false
   let usingMpegtsFallback = false
   let lastLoggedErrorSignature = ''
+  const streamDiagnosisCache = new Map<string, LiveChannelDiagnosis | null>()
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
   const shouldPinControlsVisible = computed(() =>
@@ -136,6 +138,7 @@ export function useLivePlayback() {
     mpegtsPlayer?.destroy()
     mpegtsPlayer = null
     hlsMediaRecoveryAttempted = false
+    diagnosedHlsRetryAttempted = false
     mpegtsFallbackAttempted = false
     usingMpegtsFallback = false
     channelDiagnosis.value = null
@@ -447,6 +450,84 @@ export function useLivePlayback() {
     await attemptPlay()
   }
 
+  async function startDiagnosedHlsPlayback(diagnosis: LiveChannelDiagnosis) {
+    const video = videoEl.value
+    if (!video || !selectedChannel.value) return false
+
+    const streamUrl = selectedChannel.value.stream_url
+    channelDiagnosis.value = diagnosis
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      playbackState.value = 'loading'
+      playerStatusText.value = 'Retrying stream as HLS...'
+      revealControls()
+      video.src = streamUrl
+      await attemptPlay()
+      return true
+    }
+
+    if (!Hls.isSupported()) return false
+
+    hls?.destroy()
+    hls = null
+    mpegtsPlayer?.unload()
+    mpegtsPlayer?.detachMediaElement()
+    mpegtsPlayer?.destroy()
+    mpegtsPlayer = null
+
+    playbackState.value = 'loading'
+    playerStatusText.value = 'Retrying stream as HLS...'
+    revealControls()
+
+    hls = new Hls()
+    hls.attachMedia(video)
+    hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+      hls?.loadSource(streamUrl)
+    })
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      void attemptPlay()
+    })
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      hlsError.value = {
+        type: data.type ?? 'unknown',
+        details: [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
+          .filter(Boolean)
+          .join(' | '),
+      }
+
+      if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
+        playbackState.value = 'loading'
+        playerStatusText.value = 'Buffering stream...'
+        revealControls()
+        return
+      }
+
+      if (data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR && data.fatal && !hlsMediaRecoveryAttempted) {
+        hlsMediaRecoveryAttempted = true
+        playerStatusText.value = 'Recovering stream...'
+        playbackState.value = 'loading'
+        revealControls()
+        hls?.recoverMediaError()
+        return
+      }
+
+      if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
+        hlsMediaRecoveryAttempted = true
+        playerStatusText.value = 'Recovering stream...'
+        playbackState.value = 'loading'
+        revealControls()
+        hls?.recoverMediaError()
+        return
+      }
+
+      if (data.fatal) {
+        setPlaybackError(classifyHlsError(data))
+      }
+    })
+
+    return true
+  }
+
   async function startMpegtsFallback(streamUrl: string) {
     const video = videoEl.value
     if (!video || !mpegts.isSupported()) {
@@ -497,9 +578,11 @@ export function useLivePlayback() {
 
     try {
       channelDiagnosis.value = await diagnoseLiveChannel(selectedChannel.value.id)
+      streamDiagnosisCache.set(selectedChannel.value.id, channelDiagnosis.value)
     } catch (error) {
       channelDiagnosis.value = null
       channelDiagnosisError.value = error instanceof ApiError ? error.message : 'Unable to diagnose this channel.'
+      streamDiagnosisCache.set(selectedChannel.value.id, null)
     } finally {
       channelDiagnosisLoading.value = false
       revealControls()
@@ -604,12 +687,69 @@ export function useLivePlayback() {
     }
 
     const streamUrl = selectedChannel.value?.stream_url ?? ''
+    const channelId = selectedChannel.value?.id ?? ''
     const shouldTryMpegtsFallback =
       !usingMpegtsFallback &&
       !mpegtsFallbackAttempted &&
       isDirectTsStream(streamUrl) &&
       mpegts.isSupported() &&
       mediaError?.code !== MediaError.MEDIA_ERR_ABORTED
+
+    const shouldTryDiagnosedHlsRetry =
+      !diagnosedHlsRetryAttempted &&
+      !usingMpegtsFallback &&
+      isDirectTsStream(streamUrl) &&
+      mediaError?.code !== MediaError.MEDIA_ERR_ABORTED
+
+    if (shouldTryDiagnosedHlsRetry) {
+      diagnosedHlsRetryAttempted = true
+      const cachedDiagnosis = channelId ? streamDiagnosisCache.get(channelId) : undefined
+
+      if (cachedDiagnosis?.stream_type_guess === 'hls_m3u8') {
+        void startDiagnosedHlsPlayback(cachedDiagnosis)
+        return
+      }
+
+      if (cachedDiagnosis !== undefined) {
+        if (shouldTryMpegtsFallback) {
+          mpegtsFallbackAttempted = true
+          void startMpegtsFallback(streamUrl)
+          return
+        }
+      } else if (channelId) {
+        channelDiagnosisLoading.value = true
+        channelDiagnosisError.value = ''
+        void diagnoseLiveChannel(channelId)
+          .then((diagnosis) => {
+            streamDiagnosisCache.set(channelId, diagnosis)
+            channelDiagnosis.value = diagnosis
+            if (diagnosis.stream_type_guess === 'hls_m3u8') {
+              void startDiagnosedHlsPlayback(diagnosis)
+              return
+            }
+            if (shouldTryMpegtsFallback) {
+              mpegtsFallbackAttempted = true
+              void startMpegtsFallback(streamUrl)
+              return
+            }
+          })
+          .catch((error) => {
+            streamDiagnosisCache.set(channelId, null)
+            channelDiagnosisError.value = error instanceof ApiError ? error.message : 'Unable to diagnose this channel.'
+            if (shouldTryMpegtsFallback) {
+              mpegtsFallbackAttempted = true
+              void startMpegtsFallback(streamUrl)
+              return
+            }
+            setPlaybackError(classifyNativeVideoError(mediaError))
+          })
+          .finally(() => {
+            channelDiagnosisLoading.value = false
+            revealControls()
+          })
+        return
+      }
+    }
 
     if (shouldTryMpegtsFallback) {
       mpegtsFallbackAttempted = true
