@@ -45,10 +45,15 @@ export function useVodPlayback() {
     hls?.destroy()
     hls = null
     const video = videoEl.value
-    if (!video) return
-    video.pause()
-    video.removeAttribute('src')
-    video.load()
+    if (video) {
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
+    }
+    currentEpisode.value = null
+    playbackState.value = 'idle'
+    errorMessage.value = ''
+    playerStatusText.value = 'Choose an episode to start playback.'
     isPlaying.value = false
   }
 
@@ -81,32 +86,44 @@ export function useVodPlayback() {
     if (episode.is_hls_like) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = episode.stream_url
+        video.load()
         await attemptPlay()
         return
       }
 
       if (Hls.isSupported()) {
-        hls = new Hls()
-        hls.attachMedia(video)
-        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-          hls?.loadSource(episode.stream_url)
+        const nextHls = new Hls()
+        hls = nextHls
+        nextHls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          nextHls.loadSource(episode.stream_url)
         })
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        nextHls.on(Hls.Events.MANIFEST_PARSED, () => {
           void attemptPlay()
         })
-        hls.on(Hls.Events.ERROR, (_event, data) => {
+        nextHls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
+            nextHls.destroy()
+            if (hls === nextHls) {
+              hls = null
+            }
             playbackState.value = 'error'
             playerStatusText.value = 'Episode playback failed.'
             errorMessage.value = 'Unable to load this HLS episode.'
             isPlaying.value = false
           }
         })
+        nextHls.attachMedia(video)
         return
       }
+
+      playbackState.value = 'error'
+      playerStatusText.value = 'Episode playback failed.'
+      errorMessage.value = 'This browser does not support HLS playback.'
+      return
     }
 
     video.src = episode.stream_url
+    video.load()
     await attemptPlay()
   }
 
