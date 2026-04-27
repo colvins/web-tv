@@ -193,6 +193,43 @@ export type VodCapabilityAnalysis = {
   }>
 }
 
+export type VodBrowseSite = {
+  source_config_id: string
+  source_name: string
+  site_key: string | null
+  site_name: string | null
+}
+
+export type VodBrowseCategory = {
+  type_id: number | string | null
+  type_name: string | null
+}
+
+export type VodBrowseItem = {
+  vod_id: number | string | null
+  name: string
+  category_id: number | string | null
+  category_name: string | null
+  poster: string | null
+  year: string | null
+  area: string | null
+  remarks: string | null
+}
+
+export type VodBrowseCategoriesResponse = {
+  site: VodBrowseSite
+  categories: VodBrowseCategory[]
+}
+
+export type VodBrowsePageResponse = {
+  site: VodBrowseSite
+  page: number
+  pagecount: number
+  total: number
+  limit: number | null
+  items: VodBrowseItem[]
+}
+
 export type CurrentVodSiteAnalysis = {
   site_id: string
   site_name: string
@@ -381,6 +418,37 @@ export function listSourceVodSites(sourceConfigId: string): Promise<VodSite[]> {
 
 export function getLatestVodCapabilityAnalysis(sourceConfigId: string): Promise<VodCapabilityAnalysis | null> {
   return apiRequest<VodCapabilityAnalysis | null>(`/configs/${sourceConfigId}/vod-capability-analysis/latest`)
+}
+
+export function getVodCategories(sourceConfigId: string): Promise<VodBrowseCategoriesResponse> {
+  const query = new URLSearchParams({ source_config_id: sourceConfigId })
+  return apiRequest<VodBrowseCategoriesResponse>(`/vod/categories?${query.toString()}`)
+}
+
+export function getVodList(params: {
+  source_config_id: string
+  type_id?: string | number | null
+  page?: number
+}): Promise<VodBrowsePageResponse> {
+  const query = new URLSearchParams({ source_config_id: params.source_config_id })
+  if (params.type_id !== undefined && params.type_id !== null && params.type_id !== '') {
+    query.set('type_id', String(params.type_id))
+  }
+  if (params.page) query.set('page', String(params.page))
+  return apiRequest<VodBrowsePageResponse>(`/vod/list?${query.toString()}`)
+}
+
+export function searchVod(params: {
+  source_config_id: string
+  q: string
+  page?: number
+}): Promise<VodBrowsePageResponse> {
+  const query = new URLSearchParams({
+    source_config_id: params.source_config_id,
+    q: params.q,
+  })
+  if (params.page) query.set('page', String(params.page))
+  return apiRequest<VodBrowsePageResponse>(`/vod/search?${query.toString()}`)
 }
 
 export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {
