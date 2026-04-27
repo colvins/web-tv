@@ -162,6 +162,37 @@ export type CurrentVodSite = {
   source_name: string | null
 }
 
+export type VodCapabilityAnalysisSummary = {
+  total_sites: number
+  generic_candidate_count: number
+  spider_required_count: number
+  unsupported_special_count: number
+  missing_or_invalid_count: number
+  unknown_count: number
+}
+
+export type VodCapabilityAnalysis = {
+  source_config_id: string
+  source_snapshot_id: string
+  source_snapshot_created_at: string
+  summary: VodCapabilityAnalysisSummary
+  site_analyses: Array<{
+    key: string | null
+    name: string | null
+    type: number | string | null
+    api: string | null
+    api_host: string | null
+    searchable: boolean | number | null
+    quickSearch: boolean | number | null
+    filterable: boolean | number | null
+    has_ext: boolean
+    ext_type: string | null
+    ext_summary: string | null
+    capability_level: string
+    capability_reason: string
+  }>
+}
+
 export type CurrentVodSiteAnalysis = {
   site_id: string
   site_name: string
@@ -346,6 +377,10 @@ export function diagnoseLiveChannel(id: string): Promise<LiveChannelDiagnosis> {
 
 export function listSourceVodSites(sourceConfigId: string): Promise<VodSite[]> {
   return apiRequest<VodSite[]>(`/configs/${sourceConfigId}/vod-sites`)
+}
+
+export function getLatestVodCapabilityAnalysis(sourceConfigId: string): Promise<VodCapabilityAnalysis | null> {
+  return apiRequest<VodCapabilityAnalysis | null>(`/configs/${sourceConfigId}/vod-capability-analysis/latest`)
 }
 
 export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {

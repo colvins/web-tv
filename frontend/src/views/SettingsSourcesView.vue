@@ -30,6 +30,7 @@ import {
   extractLiveChannels,
   extractVodSites,
   getCurrentVodSite,
+  getLatestVodCapabilityAnalysis,
   importSourceConfig,
   listSourceVodSites,
   listSourceConfigs,
@@ -42,6 +43,7 @@ import {
   type SourceConfig,
   type SourceConfigPayload,
   type SourceType,
+  type VodCapabilityAnalysis,
   type VodSite,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
@@ -57,6 +59,10 @@ const latestJob = ref<ImportJob | null>(null)
 const latestLiveExtraction = ref<LiveExtractionStats | null>(null)
 const currentVodSite = ref<CurrentVodSite | null>(null)
 const settingCurrentIds = ref<Set<string>>(new Set())
+const vodAnalysisOpenIds = ref<Set<string>>(new Set())
+const vodAnalysisLoadingIds = ref<Set<string>>(new Set())
+const vodAnalysisBySource = ref<Record<string, VodCapabilityAnalysis | null | undefined>>({})
+const vodAnalysisErrors = ref<Record<string, string | null | undefined>>({})
 const siteModalOpen = ref(false)
 const selectedSource = ref<SourceConfig | null>(null)
 const selectedSites = ref<VodSite[]>([])
@@ -179,6 +185,7 @@ async function runImport(source: SourceConfig) {
   importingIds.value = new Set(importingIds.value).add(source.id)
   try {
     latestJob.value = await importSourceConfig(source.id)
+    resetVodAnalysis(source.id)
     await loadSources()
     if (latestJob.value.status === 'success') {
       message.success('Import completed')
@@ -198,6 +205,7 @@ async function extractSites(source: SourceConfig) {
   extractingIds.value = new Set(extractingIds.value).add(source.id)
   try {
     selectedSites.value = await extractVodSites(source.id)
+    resetVodAnalysis(source.id)
     selectedSource.value = source
     siteModalOpen.value = true
     await loadSources()
@@ -238,6 +246,54 @@ async function openSites(source: SourceConfig) {
   } finally {
     loadingSites.value = false
   }
+}
+
+async function toggleVodAnalysis(source: SourceConfig) {
+  if (vodAnalysisOpenIds.value.has(source.id)) {
+    const next = new Set(vodAnalysisOpenIds.value)
+    next.delete(source.id)
+    vodAnalysisOpenIds.value = next
+    return
+  }
+
+  const next = new Set(vodAnalysisOpenIds.value)
+  next.add(source.id)
+  vodAnalysisOpenIds.value = next
+
+  if (vodAnalysisBySource.value[source.id] !== undefined || vodAnalysisLoadingIds.value.has(source.id)) {
+    return
+  }
+
+  vodAnalysisLoadingIds.value = new Set(vodAnalysisLoadingIds.value).add(source.id)
+  try {
+    const analysis = await getLatestVodCapabilityAnalysis(source.id)
+    vodAnalysisBySource.value = {
+      ...vodAnalysisBySource.value,
+      [source.id]: analysis,
+    }
+    vodAnalysisErrors.value = {
+      ...vodAnalysisErrors.value,
+      [source.id]: null,
+    }
+  } catch (error) {
+    vodAnalysisErrors.value = {
+      ...vodAnalysisErrors.value,
+      [source.id]: error instanceof ApiError ? error.message : 'Unable to load VOD analysis',
+    }
+  } finally {
+    const loadingNext = new Set(vodAnalysisLoadingIds.value)
+    loadingNext.delete(source.id)
+    vodAnalysisLoadingIds.value = loadingNext
+  }
+}
+
+function resetVodAnalysis(sourceId: string) {
+  const nextAnalyses = { ...vodAnalysisBySource.value }
+  const nextErrors = { ...vodAnalysisErrors.value }
+  delete nextAnalyses[sourceId]
+  delete nextErrors[sourceId]
+  vodAnalysisBySource.value = nextAnalyses
+  vodAnalysisErrors.value = nextErrors
 }
 
 async function toggleVodSite(site: VodSite, enabled: boolean) {
@@ -331,6 +387,14 @@ function sourceCurrentLabel(source: SourceConfig) {
 
 function supportsLiveExtraction(source: SourceConfig) {
   return ['m3u', 'm3u8', 'txt'].includes(source.source_type)
+}
+
+function isVodAnalysisOpen(sourceId: string) {
+  return vodAnalysisOpenIds.value.has(sourceId)
+}
+
+function vodSummary(sourceId: string) {
+  return vodAnalysisBySource.value[sourceId]?.summary ?? null
 }
 
 onMounted(async () => {
@@ -525,6 +589,49 @@ onMounted(async () => {
             <span>Live channels</span>
             <span class="text-white/72">{{ source.live_channel_count }}</span>
           </div>
+          <div
+            v-if="isVodAnalysisOpen(source.id)"
+            class="rounded-[1.5rem] border border-white/10 bg-black/16 p-4"
+          >
+            <div v-if="vodAnalysisLoadingIds.has(source.id)" class="space-y-3">
+              <div class="h-3 w-28 animate-pulse rounded-full bg-white/12"></div>
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div v-for="index in 5" :key="index" class="h-16 animate-pulse rounded-2xl bg-white/8"></div>
+              </div>
+            </div>
+            <div v-else-if="vodAnalysisErrors[source.id]" class="rounded-2xl border border-red-300/20 bg-red-400/10 p-3 text-xs leading-5 text-red-100">
+              {{ vodAnalysisErrors[source.id] }}
+            </div>
+            <div v-else-if="vodSummary(source.id)" class="space-y-3">
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-xs uppercase tracking-[0.18em] text-white/42">VOD capability</span>
+                <span class="text-xs text-white/42">Snapshot summary</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <div class="rounded-2xl border border-white/8 bg-white/6 p-3">
+                  <span class="block text-[11px] uppercase tracking-[0.16em] text-white/38">Total</span>
+                  <span class="mt-2 block text-lg font-semibold text-white">{{ vodSummary(source.id)?.total_sites }}</span>
+                </div>
+                <div class="rounded-2xl border border-emerald-300/12 bg-emerald-300/8 p-3">
+                  <span class="block text-[11px] uppercase tracking-[0.16em] text-white/38">Generic</span>
+                  <span class="mt-2 block text-lg font-semibold text-white">{{ vodSummary(source.id)?.generic_candidate_count }}</span>
+                </div>
+                <div class="rounded-2xl border border-amber-300/14 bg-amber-300/10 p-3">
+                  <span class="block text-[11px] uppercase tracking-[0.16em] text-white/38">Spider</span>
+                  <span class="mt-2 block text-lg font-semibold text-white">{{ vodSummary(source.id)?.spider_required_count }}</span>
+                </div>
+                <div class="rounded-2xl border border-red-300/14 bg-red-300/10 p-3">
+                  <span class="block text-[11px] uppercase tracking-[0.16em] text-white/38">Unsupported</span>
+                  <span class="mt-2 block text-lg font-semibold text-white">{{ vodSummary(source.id)?.unsupported_special_count }}</span>
+                </div>
+                <div class="rounded-2xl border border-white/8 bg-white/6 p-3">
+                  <span class="block text-[11px] uppercase tracking-[0.16em] text-white/38">Unknown</span>
+                  <span class="mt-2 block text-lg font-semibold text-white">{{ vodSummary(source.id)?.unknown_count }}</span>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-sm leading-6 text-white/48">No VOD analysis yet.</p>
+          </div>
           <div v-if="sourceCurrentLabel(source)" class="rounded-2xl border border-aurora/25 bg-aurora/10 p-3 text-white">
             <span class="block text-xs uppercase tracking-[0.18em] text-white/48">Current</span>
             <span class="mt-1 block text-sm">{{ sourceCurrentLabel(source) }}</span>
@@ -566,6 +673,15 @@ onMounted(async () => {
           <NButton round secondary :disabled="source.vod_site_count === 0" @click="openSites(source)">
             <template #icon><Rows3 class="h-4 w-4" /></template>
             Sites
+          </NButton>
+          <NButton
+            round
+            secondary
+            :loading="vodAnalysisLoadingIds.has(source.id)"
+            @click="toggleVodAnalysis(source)"
+          >
+            <template #icon><Rows3 class="h-4 w-4" /></template>
+            {{ isVodAnalysisOpen(source.id) ? 'Hide VOD Capability' : 'View VOD Capability' }}
           </NButton>
           <NButton round secondary class="flex-1" @click="openEditModal(source)">
             <template #icon><Edit3 class="h-4 w-4" /></template>
