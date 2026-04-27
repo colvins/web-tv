@@ -46,6 +46,7 @@ class VodCatalogPageRead(BaseModel):
 class VodPlaySourceSummaryRead(BaseModel):
     source_name: str
     episode_count: int
+    episode_names: list[str]
     sample_episode_names: list[str]
     has_play_urls: bool
 
@@ -65,3 +66,15 @@ class VodCatalogDetailRead(BaseModel):
     director: str | None = None
     description: str | None = None
     play_sources: list[VodPlaySourceSummaryRead]
+
+
+class VodEpisodePlayRead(BaseModel):
+    vod_id: int | str | None = None
+    source_name: str
+    episode_index: int
+    episode_name: str
+    stream_url: str
+    stream_host: str | None = None
+    stream_type_guess: str
+    is_hls_like: bool
+    is_direct_file_like: bool

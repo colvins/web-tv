@@ -74,30 +74,53 @@ async def get_vod_detail(
 
     candidate = await _resolve_candidate_site(db, source_config_id)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": text}))
-    items = payload.get("list")
-    if not isinstance(items, list) or not items:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="VOD detail was not found in the upstream collector response",
-        )
+    return _catalog_detail(candidate, _select_detail_item(payload, text))
 
-    selected = next(
-        (
-            item
-            for item in items
-            if isinstance(item, dict) and str(item.get("vod_id")) == text
-        ),
-        None,
-    )
-    if not isinstance(selected, dict):
-        selected = next((item for item in items if isinstance(item, dict)), None)
-    if not isinstance(selected, dict):
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Upstream VOD collector detail response did not contain a usable item",
-        )
 
-    return _catalog_detail(candidate, selected)
+async def get_episode_play(
+    db: AsyncSession,
+    source_config_id: uuid.UUID,
+    vod_id: str,
+    source_name: str,
+    episode_index: int,
+) -> dict[str, Any]:
+    text = vod_id.strip()
+    selected_source = source_name.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="vod_id cannot be empty")
+    if not selected_source:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="source_name cannot be empty")
+    if episode_index < 0:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="episode_index must be >= 0")
+
+    candidate = await _resolve_candidate_site(db, source_config_id)
+    payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": text}))
+    item = _select_detail_item(payload, text)
+    play_groups = _play_source_groups(item)
+
+    group = next((entry for entry in play_groups if entry["source_name"] == selected_source), None)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requested play source was not found")
+
+    episodes = group["episodes"]
+    if episode_index >= len(episodes):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Requested episode index was not found")
+
+    episode = episodes[episode_index]
+    stream_url = episode["stream_url"]
+    parsed = urlparse(stream_url)
+    guess = _stream_type_guess(stream_url)
+    return {
+        "vod_id": item.get("vod_id"),
+        "source_name": selected_source,
+        "episode_index": episode_index,
+        "episode_name": episode["episode_name"],
+        "stream_url": stream_url,
+        "stream_host": parsed.netloc or None,
+        "stream_type_guess": guess,
+        "is_hls_like": guess == "hls_m3u8",
+        "is_direct_file_like": guess in {"mp4", "mkv", "webm", "mov", "m4v", "direct_file"},
+    }
 
 
 async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID) -> CollectorSiteCandidate:
@@ -315,23 +338,20 @@ def _serialize_site(candidate: CollectorSiteCandidate) -> dict[str, Any]:
 
 
 def _play_sources_summary(item: dict[str, Any]) -> list[dict[str, Any]]:
-    source_names = _split_sources(item.get("vod_play_from"))
-    source_payloads = _split_sources(item.get("vod_play_url"))
-    count = max(len(source_names), len(source_payloads))
-    groups: list[dict[str, Any]] = []
-    for index in range(count):
-        source_name = source_names[index] if index < len(source_names) and source_names[index] else f"Source {index + 1}"
-        payload = source_payloads[index] if index < len(source_payloads) else ""
-        episodes = _parse_episode_names(payload)
-        groups.append(
+    groups = _play_source_groups(item)
+    summaries: list[dict[str, Any]] = []
+    for group in groups:
+        episode_names = [episode["episode_name"] for episode in group["episodes"]]
+        summaries.append(
             {
-                "source_name": source_name,
-                "episode_count": len(episodes),
-                "sample_episode_names": episodes[:8],
-                "has_play_urls": bool(payload.strip()),
+                "source_name": group["source_name"],
+                "episode_count": len(episode_names),
+                "episode_names": episode_names,
+                "sample_episode_names": episode_names[:8],
+                "has_play_urls": any(bool(episode["stream_url"]) for episode in group["episodes"]),
             }
         )
-    return groups
+    return summaries
 
 
 def _split_sources(value: Any) -> list[str]:
@@ -341,20 +361,45 @@ def _split_sources(value: Any) -> list[str]:
     return [segment.strip() for segment in text.split("$$$")]
 
 
-def _parse_episode_names(value: str) -> list[str]:
-    names: list[str] = []
+def _parse_episode_entries(value: str) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
     for segment in value.split("#"):
         part = segment.strip()
         if not part:
             continue
         if "$" in part:
-            name = part.split("$", 1)[0].strip()
+            name, url = part.split("$", 1)
+            episode_name = name.strip() or f"Episode {len(entries) + 1}"
+            stream_url = url.strip()
         else:
-            name = part
-        if not name:
-            name = f"Episode {len(names) + 1}"
-        names.append(name[:80])
-    return names
+            episode_name = part
+            stream_url = ""
+        if not episode_name:
+            episode_name = f"Episode {len(entries) + 1}"
+        entries.append(
+            {
+                "episode_name": episode_name[:80],
+                "stream_url": stream_url,
+            }
+        )
+    return entries
+
+
+def _play_source_groups(item: dict[str, Any]) -> list[dict[str, Any]]:
+    source_names = _split_sources(item.get("vod_play_from"))
+    source_payloads = _split_sources(item.get("vod_play_url"))
+    count = max(len(source_names), len(source_payloads))
+    groups: list[dict[str, Any]] = []
+    for index in range(count):
+        source_name = source_names[index] if index < len(source_names) and source_names[index] else f"Source {index + 1}"
+        payload = source_payloads[index] if index < len(source_payloads) else ""
+        groups.append(
+            {
+                "source_name": source_name,
+                "episodes": _parse_episode_entries(payload),
+            }
+        )
+    return groups
 
 
 def _description(item: dict[str, Any]) -> str | None:
@@ -363,6 +408,50 @@ def _description(item: dict[str, Any]) -> str | None:
         return None
     compact = " ".join(text.split())
     return compact[:1200] if len(compact) > 1200 else compact
+
+
+def _select_detail_item(payload: dict[str, Any], vod_id: str) -> dict[str, Any]:
+    items = payload.get("list")
+    if not isinstance(items, list) or not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VOD detail was not found in the upstream collector response",
+        )
+
+    selected = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict) and str(item.get("vod_id")) == vod_id
+        ),
+        None,
+    )
+    if not isinstance(selected, dict):
+        selected = next((item for item in items if isinstance(item, dict)), None)
+    if not isinstance(selected, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Upstream VOD collector detail response did not contain a usable item",
+        )
+    return selected
+
+
+def _stream_type_guess(stream_url: str) -> str:
+    lowered = stream_url.lower()
+    parsed = urlparse(stream_url)
+    path = parsed.path.lower()
+    if ".m3u8" in lowered or path.endswith(".m3u8"):
+        return "hls_m3u8"
+    for ext in (".mp4", ".mkv", ".webm", ".mov", ".m4v"):
+        if path.endswith(ext):
+            return ext.removeprefix(".")
+    if path.endswith(".ts"):
+        return "ts"
+    if path.endswith(".mp3"):
+        return "mp3"
+    if parsed.scheme in {"http", "https"}:
+        return "direct_file"
+    return "unknown"
 
 
 def _http_url(value: Any) -> str | None:

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.schemas.vod_catalog import VodCatalogDetailRead, VodCatalogPageRead, VodCategoryListRead
+from app.schemas.vod_catalog import VodCatalogDetailRead, VodCatalogPageRead, VodCategoryListRead, VodEpisodePlayRead
 from app.services import vod_catalog
 
 router = APIRouter(prefix="/vod", tags=["vod"])
@@ -45,3 +45,14 @@ async def get_vod_detail(
     db: AsyncSession = Depends(get_db),
 ) -> VodCatalogDetailRead:
     return await vod_catalog.get_vod_detail(db, source_config_id, vod_id)
+
+
+@router.get("/episode-play", response_model=VodEpisodePlayRead)
+async def get_vod_episode_play(
+    source_config_id: uuid.UUID = Query(...),
+    vod_id: str = Query(..., min_length=1),
+    source_name: str = Query(..., min_length=1),
+    episode_index: int = Query(..., ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> VodEpisodePlayRead:
+    return await vod_catalog.get_episode_play(db, source_config_id, vod_id, source_name, episode_index)

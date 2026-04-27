@@ -236,8 +236,21 @@ export type VodBrowsePageResponse = {
 export type VodPlaySourceSummary = {
   source_name: string
   episode_count: number
+  episode_names: string[]
   sample_episode_names: string[]
   has_play_urls: boolean
+}
+
+export type VodEpisodePlayResponse = {
+  vod_id: number | string | null
+  source_name: string
+  episode_index: number
+  episode_name: string
+  stream_url: string
+  stream_host: string | null
+  stream_type_guess: string
+  is_hls_like: boolean
+  is_direct_file_like: boolean
 }
 
 export type VodBrowseDetailResponse = {
@@ -487,6 +500,21 @@ export function getVodDetail(params: {
     vod_id: String(params.vod_id),
   })
   return apiRequest<VodBrowseDetailResponse>(`/vod/detail?${query.toString()}`)
+}
+
+export function getVodEpisodePlay(params: {
+  source_config_id: string
+  vod_id: string | number
+  source_name: string
+  episode_index: number
+}): Promise<VodEpisodePlayResponse> {
+  const query = new URLSearchParams({
+    source_config_id: params.source_config_id,
+    vod_id: String(params.vod_id),
+    source_name: params.source_name,
+    episode_index: String(params.episode_index),
+  })
+  return apiRequest<VodEpisodePlayResponse>(`/vod/episode-play?${query.toString()}`)
 }
 
 export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {
