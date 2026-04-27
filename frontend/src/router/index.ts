@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-import FavoritesView from '@/views/FavoritesView.vue'
 import HistoryView from '@/views/HistoryView.vue'
 import HomeView from '@/views/HomeView.vue'
 import LiveView from '@/views/LiveView.vue'
@@ -21,7 +20,6 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'VOD Detail' },
   },
   { path: '/search', name: 'search', component: SearchView, meta: { title: 'Search' } },
-  { path: '/favorites', name: 'favorites', component: FavoritesView, meta: { title: 'Favorites' } },
   { path: '/history', name: 'history', component: HistoryView, meta: { title: 'History' } },
   { path: '/settings', name: 'settings', component: SettingsView, meta: { title: 'Settings' } },
   {

@@ -1,30 +1,68 @@
 <script setup lang="ts">
-import EmptyRail from '@/components/EmptyRail.vue'
+import { computed, onMounted, ref } from 'vue'
+
+import { ApiError } from '@/api/client'
+import { getCurrentVodSite, getVodList, type CurrentVodSite, type VodBrowseItem } from '@/api/sourceConfigs'
+import HomeContinueWatchingRail from '@/components/home/HomeContinueWatchingRail.vue'
+import HomeHeroCarousel from '@/components/home/HomeHeroCarousel.vue'
+import { useAppStore } from '@/stores/app'
+
+const appStore = useAppStore()
+
+const currentVodSite = ref<CurrentVodSite | null>(null)
+const latestItems = ref<VodBrowseItem[]>([])
+const heroLoading = ref(false)
+const heroError = ref<string | null>(null)
+
+const recentItems = computed(() => appStore.recentVodPlayback)
+
+async function loadHomeHero() {
+  heroLoading.value = true
+  heroError.value = null
+
+  try {
+    currentVodSite.value = await getCurrentVodSite()
+
+    if (!currentVodSite.value?.source_config_id) {
+      latestItems.value = []
+      return
+    }
+
+    const response = await getVodList({
+      source_config_id: currentVodSite.value.source_config_id,
+      site_key: currentVodSite.value.site_key,
+      page: 1,
+    })
+    latestItems.value = response.items.filter((item) => Boolean(item.poster)).slice(0, 18)
+  } catch (error) {
+    latestItems.value = []
+    heroError.value = error instanceof ApiError ? error.message : 'Unable to load home recommendations'
+  } finally {
+    heroLoading.value = false
+  }
+}
+
+onMounted(() => {
+  appStore.ensurePersistentStateLoaded()
+  void loadHomeHero()
+})
 </script>
 
 <template>
-  <section class="mb-10 grid gap-5 xl:grid-cols-[1.5fr_1fr]">
-    <div
-      tabindex="0"
-      class="tv-focus-card glass-panel flex min-h-[22rem] items-end rounded-[2.5rem] bg-[linear-gradient(135deg,rgba(137,180,255,0.2),rgba(255,184,107,0.12))] p-7 sm:p-10"
-    >
-      <div>
-        <p class="mb-3 text-sm uppercase tracking-[0.28em] text-white/52">Ready</p>
-        <h2 class="max-w-2xl text-4xl font-semibold sm:text-6xl">Connect sources to begin watching.</h2>
-      </div>
-    </div>
-    <div class="glass-panel rounded-[2.5rem] p-7">
-      <p class="text-sm uppercase tracking-[0.28em] text-white/42">Status</p>
-      <div class="mt-8 grid gap-4">
-        <RouterLink to="/settings/sources" class="tv-focus-card rounded-3xl border border-white/10 p-5">
-          Configure sources
-        </RouterLink>
-        <RouterLink to="/live" class="tv-focus-card rounded-3xl border border-white/10 p-5">
-          Browse live channels
-        </RouterLink>
-      </div>
-    </div>
+  <section class="pb-8">
+    <HomeHeroCarousel
+      :source-config-id="currentVodSite?.source_config_id ?? null"
+      :site-key="currentVodSite?.site_key ?? null"
+      :source-name="currentVodSite?.source_name ?? null"
+      :site-name="currentVodSite?.site_name ?? null"
+      :items="latestItems"
+      :loading="heroLoading"
+    />
+
+    <p v-if="heroError" class="mt-4 rounded-[1.5rem] border border-red-300/16 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+      {{ heroError }}
+    </p>
+
+    <HomeContinueWatchingRail :items="recentItems" />
   </section>
-  <EmptyRail title="Continue Watching" description="Playback history will appear here after content is played." />
-  <EmptyRail title="Favorites" description="Favorite channels and VOD items will appear in this rail." />
 </template>

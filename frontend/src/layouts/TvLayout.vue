@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import {
   Clock3,
-  Heart,
   Home,
   MonitorPlay,
   PlaySquare,
@@ -28,7 +27,6 @@ const navItems: NavItem[] = [
   { label: 'Live', path: '/live', icon: MonitorPlay },
   { label: 'VOD', path: '/vod', icon: PlaySquare },
   { label: 'Search', path: '/search', icon: Search },
-  { label: 'Favorites', path: '/favorites', icon: Heart },
   { label: 'History', path: '/history', icon: Clock3 },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]
@@ -118,7 +116,7 @@ function isNavItemActive(path: string) {
     </main>
 
     <nav
-      class="glass-panel fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 grid grid-cols-7 rounded-[2rem] p-2 lg:hidden"
+      class="glass-panel fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 grid grid-cols-6 rounded-[2rem] p-2 lg:hidden"
       aria-label="Mobile navigation"
     >
       <RouterLink

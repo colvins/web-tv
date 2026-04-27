@@ -8,6 +8,7 @@ import { getVodDetail, getVodEpisodePlay, type VodBrowseDetailResponse, type Vod
 import VodDetailDesktopLayout from '@/components/vod/VodDetailDesktopLayout.vue'
 import VodDetailMobileLayout from '@/components/vod/VodDetailMobileLayout.vue'
 import { useVodPlayback } from '@/composables/useVodPlayback'
+import { useAppStore } from '@/stores/app'
 import { buildVodCatalogQuery, parseVodCatalogRouteState } from '@/utils/vodRouteState'
 
 const route = useRoute()
@@ -21,6 +22,7 @@ const episodeLoadingKey = ref<string | null>(null)
 const episodeError = ref<string | null>(null)
 const playback = useVodPlayback()
 const isDesktopLayout = ref(true)
+const appStore = useAppStore()
 
 let mediaQuery: MediaQueryList | undefined
 
@@ -86,6 +88,20 @@ async function playEpisode(episodeIndex: number) {
       episode_index: episodeIndex,
     })
     await playback.loadEpisode(episode)
+    appStore.recordRecentVodPlayback({
+      sourceConfigId: sourceConfigId.value,
+      siteKey: catalogState.value.siteKey,
+      vodId: String(detail.value.vod_id),
+      name: detail.value.name,
+      poster: detail.value.poster,
+      categoryName: detail.value.category_name,
+      year: detail.value.year,
+      remarks: detail.value.remarks,
+      sourceName,
+      episodeName: episode.episode_name,
+      episodeIndex: episode.episode_index,
+      watchedAt: new Date().toISOString(),
+    })
     await nextTick()
     document.querySelector<HTMLElement>('[data-vod-player-shell]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   } catch (error) {
