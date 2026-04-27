@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -21,6 +22,15 @@ IMPORT_HEADERS = {
     "User-Agent": "okhttp/4.10.0",
     "Accept": "*/*",
 }
+REAL_PARENT_FIELD_NAMES = (
+    "type_pid",
+    "parent_id",
+    "pid",
+    "type_pid_1",
+    "type_id_1",
+    "parent_type_id",
+)
+LOGGER = logging.getLogger(__name__)
 
 FALLBACK_PARENT_GROUPS: dict[str, tuple[str, ...]] = {
     "电影": (
@@ -170,13 +180,12 @@ def parse_categories_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if not type_id or not type_name:
             continue
         names_by_type_id[type_id] = type_name
+        parent_type_id = _extract_parent_type_id(item)
         raw_categories.append(
             {
                 "type_id": type_id,
                 "type_name": type_name,
-                "parent_type_id": _normalized_parent_type_id(
-                    item.get("type_pid", item.get("parent_id", item.get("pid", item.get("type_pid_1", item.get("type_id_1")))))
-                ),
+                "parent_type_id": parent_type_id,
                 "parent_type_name": _string_or_none(
                     item.get("parent_name")
                     or item.get("parent_type_name")
@@ -187,23 +196,9 @@ def parse_categories_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
 
-    categories: list[dict[str, Any]] = []
-    has_real_parent_structure = False
-    for category in raw_categories:
-        parent_type_id = _string_or_none(category.get("parent_type_id"))
-        parent_type_name = _string_or_none(category.get("parent_type_name")) or names_by_type_id.get(parent_type_id or "")
-        if parent_type_id or parent_type_name:
-            has_real_parent_structure = True
-        categories.append(
-            {
-                **category,
-                "parent_type_name": parent_type_name,
-            }
-        )
-
-    if has_real_parent_structure:
-        return categories
-    return _apply_name_based_parent_fallback(categories)
+    if _has_native_hierarchy(raw_categories):
+        return _finalize_native_categories(raw_categories, names_by_type_id)
+    return _apply_name_based_parent_fallback(_finalize_root_categories(raw_categories))
 
 
 async def _sync_site_categories(
@@ -301,6 +296,69 @@ def _normalized_parent_type_id(value: Any) -> str | None:
     return text
 
 
+def _extract_parent_type_id(item: dict[str, Any]) -> str | None:
+    for field_name in REAL_PARENT_FIELD_NAMES:
+        if field_name not in item:
+            continue
+        parent_type_id = _normalized_parent_type_id(item.get(field_name))
+        if parent_type_id is not None:
+            return parent_type_id
+    return None
+
+
+def _has_native_hierarchy(categories: list[dict[str, Any]]) -> bool:
+    return any(_string_or_none(category.get("parent_type_id")) for category in categories)
+
+
+def _finalize_root_categories(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            **category,
+            "parent_type_id": None,
+            "parent_type_name": None,
+        }
+        for category in categories
+    ]
+
+
+def _finalize_native_categories(
+    categories: list[dict[str, Any]],
+    names_by_type_id: dict[str, str],
+) -> list[dict[str, Any]]:
+    finalized: list[dict[str, Any]] = []
+    for category in categories:
+        type_id = _string_or_none(category.get("type_id"))
+        type_name = _string_or_none(category.get("type_name"))
+        parent_type_id = _string_or_none(category.get("parent_type_id"))
+        parent_type_name = _string_or_none(category.get("parent_type_name"))
+
+        if parent_type_id == type_id:
+            parent_type_id = None
+            parent_type_name = None
+        elif parent_type_id and parent_type_id not in names_by_type_id:
+            LOGGER.warning(
+                "VOD category parent id %s was not found in class list; treating %s (%s) as a root leaf",
+                parent_type_id,
+                type_name,
+                type_id,
+            )
+            parent_type_id = None
+            parent_type_name = None
+        elif parent_type_id:
+            parent_type_name = parent_type_name or names_by_type_id.get(parent_type_id)
+        else:
+            parent_type_name = None
+
+        finalized.append(
+            {
+                **category,
+                "parent_type_id": parent_type_id,
+                "parent_type_name": parent_type_name,
+            }
+        )
+    return finalized
+
+
 def _apply_name_based_parent_fallback(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not categories:
         return categories
@@ -314,10 +372,6 @@ def _apply_name_based_parent_fallback(categories: list[dict[str, Any]]) -> list[
 
     updated: list[dict[str, Any]] = []
     for category in categories:
-        if _string_or_none(category.get("parent_type_id")) or _string_or_none(category.get("parent_type_name")):
-            updated.append(category)
-            continue
-
         parent_name = FALLBACK_CHILD_TO_PARENT.get(_normalize_category_name(category.get("type_name")))
         if not parent_name:
             updated.append(category)
