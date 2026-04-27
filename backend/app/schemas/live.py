@@ -47,3 +47,38 @@ class LiveChannelRead(BaseModel):
 
 class LiveChannelUpdate(BaseModel):
     enabled: bool
+
+
+class LiveChannelM3U8Info(BaseModel):
+    playlist_kind: str | None = None
+    has_media_segments: bool = False
+    sample_segment_path: str | None = None
+    preview_text: str | None = None
+
+
+class LiveChannelSampleSegmentCheck(BaseModel):
+    status_code: int | None = None
+    content_type: str | None = None
+    content_length: int | None = None
+    final_host: str | None = None
+    warning: str | None = None
+
+
+class LiveChannelDiagnosisRead(BaseModel):
+    channel_id: uuid.UUID
+    channel_name: str
+    group_name: str | None = None
+    stream_host: str | None = None
+    final_host: str | None = None
+    http_status: int | None = None
+    content_type: str | None = None
+    content_length: int | None = None
+    redirect_count: int = 0
+    stream_type_guess: str
+    body_preview: str | None = None
+    m3u8_info: LiveChannelM3U8Info | None = None
+    sample_segment_check: LiveChannelSampleSegmentCheck | None = None
+    diagnosis_level: str
+    diagnosis_summary: str
+    suggested_next_step: str
+    warnings: list[str]

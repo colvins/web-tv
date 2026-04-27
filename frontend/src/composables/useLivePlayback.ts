@@ -1,7 +1,8 @@
 import Hls from 'hls.js'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import type { LiveChannel } from '@/api/sourceConfigs'
+import { diagnoseLiveChannel, type LiveChannel, type LiveChannelDiagnosis } from '@/api/sourceConfigs'
+import { ApiError } from '@/api/client'
 
 export type PlaybackState = 'idle' | 'loading' | 'ready' | 'error'
 export type ChannelPlaybackStatus = 'unknown' | 'playing' | 'failed'
@@ -51,6 +52,9 @@ export function useLivePlayback() {
   const isMuted = ref(false)
   const isFullscreen = ref(false)
   const playerStatusText = ref('Select a channel to start playback.')
+  const channelDiagnosis = ref<LiveChannelDiagnosis | null>(null)
+  const channelDiagnosisLoading = ref(false)
+  const channelDiagnosisError = ref('')
   const videoEl = ref<HTMLVideoElement | null>(null)
   const controlsVisible = ref(true)
   const playerHovering = ref(false)
@@ -124,6 +128,9 @@ export function useLivePlayback() {
     hls?.destroy()
     hls = null
     hlsMediaRecoveryAttempted = false
+    channelDiagnosis.value = null
+    channelDiagnosisLoading.value = false
+    channelDiagnosisError.value = ''
 
     const video = videoEl.value
     if (!video) return
@@ -426,6 +433,23 @@ export function useLivePlayback() {
     await attemptPlay()
   }
 
+  async function runChannelDiagnosis() {
+    if (!selectedChannel.value) return
+
+    channelDiagnosisLoading.value = true
+    channelDiagnosisError.value = ''
+
+    try {
+      channelDiagnosis.value = await diagnoseLiveChannel(selectedChannel.value.id)
+    } catch (error) {
+      channelDiagnosis.value = null
+      channelDiagnosisError.value = error instanceof ApiError ? error.message : 'Unable to diagnose this channel.'
+    } finally {
+      channelDiagnosisLoading.value = false
+      revealControls()
+    }
+  }
+
   async function togglePlayback() {
     const video = videoEl.value
     if (!video || !selectedChannel.value) return
@@ -594,10 +618,14 @@ export function useLivePlayback() {
     isMuted,
     isFullscreen,
     playerStatusText,
+    channelDiagnosis,
+    channelDiagnosisLoading,
+    channelDiagnosisError,
     controlsVisible,
     setVideoElement,
     updateSelectedChannel,
     loadChannel,
+    runChannelDiagnosis,
     destroyPlayer,
     togglePlayback,
     toggleMute,

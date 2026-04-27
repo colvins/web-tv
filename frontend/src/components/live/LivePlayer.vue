@@ -208,6 +208,72 @@ async function copyDiagnostics() {
             </span>
           </div>
 
+          <div v-if="playback.playbackState.value === 'error'" class="flex flex-wrap items-center gap-2">
+            <button
+              class="diagnostics-copy-button tv-focus-card inline-flex min-h-10 items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-2 text-xs text-white/86 transition"
+              type="button"
+              :disabled="playback.channelDiagnosisLoading.value || !playback.selectedChannel.value"
+              @click.stop="playback.runChannelDiagnosis"
+            >
+              <LoaderCircle v-if="playback.channelDiagnosisLoading.value" class="h-4 w-4 animate-spin" />
+              <span>{{ playback.channelDiagnosisLoading.value ? 'Diagnosing channel' : 'Diagnose channel' }}</span>
+            </button>
+            <span v-if="playback.channelDiagnosisError.value" class="text-xs text-rose-100/80">
+              {{ playback.channelDiagnosisError.value }}
+            </span>
+          </div>
+
+          <div
+            v-if="playback.channelDiagnosis.value"
+            class="max-w-md rounded-[1.25rem] border border-white/10 bg-black/42 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="font-medium text-white">Server diagnosis</p>
+                <p class="mt-1 text-[11px] text-white/48">{{ playback.channelDiagnosis.value.final_host ?? playback.channelDiagnosis.value.stream_host }}</p>
+              </div>
+              <span class="rounded-full border border-white/10 bg-white/8 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/68">
+                {{ playback.channelDiagnosis.value.diagnosis_level.replaceAll('_', ' ') }}
+              </span>
+            </div>
+
+            <div class="mt-3 space-y-3 border-t border-white/8 pt-3">
+              <p class="leading-5 text-white/86">{{ playback.channelDiagnosis.value.diagnosis_summary }}</p>
+
+              <div class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-2 leading-5">
+                <span class="text-white/42">Stream type</span>
+                <span class="break-words text-white/86">{{ playback.channelDiagnosis.value.stream_type_guess }}</span>
+
+                <span class="text-white/42">HTTP status</span>
+                <span class="break-words text-white/86">{{ playback.channelDiagnosis.value.http_status ?? 'n/a' }}</span>
+
+                <span class="text-white/42">Content type</span>
+                <span class="break-words text-white/86">{{ playback.channelDiagnosis.value.content_type ?? 'n/a' }}</span>
+
+                <span class="text-white/42">Final host</span>
+                <span class="break-words text-white/86">{{ playback.channelDiagnosis.value.final_host ?? 'n/a' }}</span>
+
+                <template v-if="playback.channelDiagnosis.value.m3u8_info">
+                  <span class="text-white/42">Playlist</span>
+                  <span class="break-words text-white/86">
+                    {{ playback.channelDiagnosis.value.m3u8_info.playlist_kind ?? 'unknown' }}
+                    <span v-if="playback.channelDiagnosis.value.m3u8_info.has_media_segments" class="text-white/54">· segments detected</span>
+                  </span>
+                </template>
+
+                <template v-if="playback.channelDiagnosis.value.sample_segment_check">
+                  <span class="text-white/42">Sample segment</span>
+                  <span class="break-words text-white/86">
+                    {{ playback.channelDiagnosis.value.sample_segment_check.status_code ?? 'n/a' }}
+                    <span class="text-white/54">· {{ playback.channelDiagnosis.value.sample_segment_check.content_type ?? 'unknown' }}</span>
+                  </span>
+                </template>
+              </div>
+
+              <p class="leading-5 text-white/72">{{ playback.channelDiagnosis.value.suggested_next_step }}</p>
+            </div>
+          </div>
+
           <details
             v-if="playback.playbackState.value === 'error'"
             class="diagnostics-panel max-w-md rounded-[1.25rem] border border-white/10 bg-black/42 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl"

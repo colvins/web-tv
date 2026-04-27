@@ -109,6 +109,46 @@ export type LiveChannel = {
   updated_at: string
 }
 
+export type LiveChannelDiagnosisLevel =
+  | 'playable_likely'
+  | 'browser_format_unsupported'
+  | 'cors_or_browser_block_likely'
+  | 'upstream_unreachable'
+  | 'upstream_error'
+  | 'segment_error'
+  | 'unknown'
+
+export type LiveChannelDiagnosis = {
+  channel_id: string
+  channel_name: string
+  group_name: string | null
+  stream_host: string | null
+  final_host: string | null
+  http_status: number | null
+  content_type: string | null
+  content_length: number | null
+  redirect_count: number
+  stream_type_guess: 'hls_m3u8' | 'mpeg_ts' | 'mp4' | 'flv' | 'unknown'
+  body_preview: string | null
+  m3u8_info: {
+    playlist_kind: string | null
+    has_media_segments: boolean
+    sample_segment_path: string | null
+    preview_text: string | null
+  } | null
+  sample_segment_check: {
+    status_code: number | null
+    content_type: string | null
+    content_length: number | null
+    final_host: string | null
+    warning: string | null
+  } | null
+  diagnosis_level: LiveChannelDiagnosisLevel
+  diagnosis_summary: string
+  suggested_next_step: string
+  warnings: string[]
+}
+
 export type CurrentVodSite = {
   id: string
   source_config_id: string | null
@@ -293,6 +333,12 @@ export function updateLiveChannel(id: string, enabled: boolean): Promise<LiveCha
   return apiRequest<LiveChannel>(`/live/channels/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ enabled }),
+  })
+}
+
+export function diagnoseLiveChannel(id: string): Promise<LiveChannelDiagnosis> {
+  return apiRequest<LiveChannelDiagnosis>(`/live/channels/${id}/diagnose`, {
+    method: 'POST',
   })
 }
 
