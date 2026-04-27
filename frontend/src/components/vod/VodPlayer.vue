@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { Maximize2 } from 'lucide-vue-next'
-import { NButton } from 'naive-ui'
-
 import type { VodPlayback } from '@/composables/useVodPlayback'
 
 withDefaults(defineProps<{
@@ -23,16 +20,6 @@ withDefaults(defineProps<{
       <h4 class="min-w-0 truncate font-semibold text-white" :class="compact ? 'text-base' : 'text-lg'">
         {{ playback.currentEpisode.value?.episode_name ?? '请选择剧集' }}
       </h4>
-      <NButton
-        round
-        secondary
-        :disabled="!playback.currentEpisode.value"
-        class="min-h-11 min-w-11 shrink-0"
-        @click="playback.toggleFullscreen"
-      >
-        <template #icon><Maximize2 class="h-4 w-4" /></template>
-        全屏
-      </NButton>
     </div>
 
     <div class="aspect-video bg-black">

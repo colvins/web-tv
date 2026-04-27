@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeft, RefreshCw } from 'lucide-vue-next'
-import { NButton } from 'naive-ui'
+import { ChevronLeft } from 'lucide-vue-next'
 
 import type { VodBrowseDetailResponse } from '@/api/sourceConfigs'
 import type { VodPlayback } from '@/composables/useVodPlayback'
@@ -11,7 +10,6 @@ defineProps<{
   detail: VodBrowseDetailResponse | null
   detailLoading: boolean
   detailError: string | null
-  cleanDescription: string
   episodeLoadingKey: string | null
   episodeError: string | null
   playback: VodPlayback
@@ -19,7 +17,6 @@ defineProps<{
 
 const emit = defineEmits<{
   goBack: []
-  refresh: []
   playEpisode: [sourceName: string, episodeIndex: number]
 }>()
 </script>
@@ -27,15 +24,10 @@ const emit = defineEmits<{
 <template>
   <section class="grid gap-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
     <article class="glass-panel rounded-[1.75rem] p-5">
-      <div class="flex items-start justify-between gap-4">
-        <button type="button" class="inline-flex items-center gap-2 text-sm text-white/74 transition hover:text-white" @click="emit('goBack')">
-          <ChevronLeft class="h-4 w-4" aria-hidden="true" />
-          返回列表
-        </button>
-        <NButton quaternary circle :loading="detailLoading" @click="emit('refresh')">
-          <template #icon><RefreshCw class="h-4 w-4" /></template>
-        </NButton>
-      </div>
+      <button type="button" class="inline-flex items-center gap-2 text-sm text-white/74 transition hover:text-white" @click="emit('goBack')">
+        <ChevronLeft class="h-4 w-4" aria-hidden="true" />
+        返回列表
+      </button>
 
       <div class="mt-4 min-w-0">
         <h2 class="text-2xl font-semibold text-white">{{ detail?.name ?? '影片详情' }}</h2>

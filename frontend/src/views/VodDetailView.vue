@@ -35,8 +35,6 @@ const backTarget = computed(() => ({
   }),
 }))
 
-const cleanDescription = computed(() => detail.value?.description?.trim() ?? '')
-
 function syncLayoutMode() {
   isDesktopLayout.value = mediaQuery?.matches ?? window.innerWidth >= 768
 }
@@ -125,12 +123,10 @@ onBeforeUnmount(() => {
       :detail="detail"
       :detail-loading="detailLoading"
       :detail-error="detailError"
-      :clean-description="cleanDescription"
       :episode-loading-key="episodeLoadingKey"
       :episode-error="episodeError"
       :playback="playback"
       @go-back="goBack"
-      @refresh="loadDetail"
       @play-episode="playEpisode"
     />
 
@@ -139,12 +135,10 @@ onBeforeUnmount(() => {
       :detail="detail"
       :detail-loading="detailLoading"
       :detail-error="detailError"
-      :clean-description="cleanDescription"
       :episode-loading-key="episodeLoadingKey"
       :episode-error="episodeError"
       :playback="playback"
       @go-back="goBack"
-      @refresh="loadDetail"
       @play-episode="playEpisode"
     />
   </div>

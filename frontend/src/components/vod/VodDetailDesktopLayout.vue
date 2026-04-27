@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeft, RefreshCw } from 'lucide-vue-next'
-import { NButton } from 'naive-ui'
+import { ChevronLeft } from 'lucide-vue-next'
 
 import type { VodBrowseDetailResponse } from '@/api/sourceConfigs'
 import type { VodPlayback } from '@/composables/useVodPlayback'
@@ -11,7 +10,6 @@ defineProps<{
   detail: VodBrowseDetailResponse | null
   detailLoading: boolean
   detailError: string | null
-  cleanDescription: string
   episodeLoadingKey: string | null
   episodeError: string | null
   playback: VodPlayback
@@ -19,7 +17,6 @@ defineProps<{
 
 const emit = defineEmits<{
   goBack: []
-  refresh: []
   playEpisode: [sourceName: string, episodeIndex: number]
 }>()
 </script>
@@ -46,10 +43,6 @@ const emit = defineEmits<{
             <span v-if="detail.remarks" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.remarks }}</span>
           </div>
         </div>
-        <NButton round secondary :loading="detailLoading" @click="emit('refresh')">
-          <template #icon><RefreshCw class="h-4 w-4" /></template>
-          Refresh detail
-        </NButton>
       </div>
     </article>
 
