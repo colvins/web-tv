@@ -32,6 +32,7 @@ export function useVodPlayback() {
   const videoEl = ref<HTMLVideoElement | null>(null)
 
   let hls: Hls | null = null
+  let hlsMediaRecoveryAttempted = false
 
   const streamHost = computed(() => currentEpisode.value?.stream_host ?? '未知来源')
   const streamTypeGuess = computed(() => currentEpisode.value?.stream_type_guess ?? '未知格式')
@@ -54,6 +55,7 @@ export function useVodPlayback() {
   function destroyPlayer() {
     hls?.destroy()
     hls = null
+    hlsMediaRecoveryAttempted = false
     const video = videoEl.value
     if (video) {
       video.pause()
@@ -104,6 +106,7 @@ export function useVodPlayback() {
       if (Hls.isSupported()) {
         const nextHls = new Hls()
         hls = nextHls
+        hlsMediaRecoveryAttempted = false
         nextHls.on(Hls.Events.MEDIA_ATTACHED, () => {
           nextHls.loadSource(episode.stream_url)
         })
@@ -112,6 +115,11 @@ export function useVodPlayback() {
         })
         nextHls.on(Hls.Events.ERROR, (_event, data) => {
           if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
+              hlsMediaRecoveryAttempted = true
+              nextHls.recoverMediaError()
+              return
+            }
             nextHls.destroy()
             if (hls === nextHls) {
               hls = null

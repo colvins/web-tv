@@ -583,11 +583,15 @@ async def _upsert_groups(
 
 
 async def _refresh_group_counts(db: AsyncSession, source_config_id: uuid.UUID) -> None:
-    groups = await db.scalars(select(LiveChannelGroup).where(LiveChannelGroup.source_config_id == source_config_id))
+    groups = list(
+        await db.scalars(select(LiveChannelGroup).where(LiveChannelGroup.source_config_id == source_config_id))
+    )
+    counts = await db.execute(
+        select(LiveChannel.group_id, func.count(LiveChannel.id))
+        .where(LiveChannel.source_config_id == source_config_id)
+        .group_by(LiveChannel.group_id)
+    )
+    count_map = {group_id: channel_count for group_id, channel_count in counts.all() if group_id is not None}
+
     for group in groups:
-        group.channel_count = await db.scalar(
-            select(func.count(LiveChannel.id)).where(
-                LiveChannel.source_config_id == source_config_id,
-                LiveChannel.group_id == group.id,
-            )
-        ) or 0
+        group.channel_count = count_map.get(group.id, 0)
