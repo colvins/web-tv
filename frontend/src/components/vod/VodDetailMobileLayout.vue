@@ -12,12 +12,13 @@ defineProps<{
   detailError: string | null
   episodeLoadingKey: string | null
   episodeError: string | null
+  preferredSourceName: string | null
   playback: VodPlayback
 }>()
 
 const emit = defineEmits<{
   goBack: []
-  playEpisode: [sourceName: string, episodeIndex: number]
+  playEpisode: [episodeIndex: number]
 }>()
 </script>
 
@@ -64,10 +65,11 @@ const emit = defineEmits<{
           <VodEpisodeList
             compact
             :play-sources="detail.play_sources"
+            :source-name="preferredSourceName"
             :episode-loading-key="episodeLoadingKey"
             :selected-source-name="playback.currentEpisode.value?.source_name ?? null"
             :selected-episode-index="playback.currentEpisode.value?.episode_index ?? null"
-            @play-episode="(sourceName, episodeIndex) => emit('playEpisode', sourceName, episodeIndex)"
+            @play-episode="(_sourceName, episodeIndex) => emit('playEpisode', episodeIndex)"
           />
         </div>
       </article>

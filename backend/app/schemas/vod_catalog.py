@@ -69,6 +69,7 @@ class VodCatalogDetailRead(BaseModel):
     actor: str | None = None
     director: str | None = None
     description: str | None = None
+    preferred_source_name: str | None = None
     play_sources: list[VodPlaySourceSummaryRead]
 
 

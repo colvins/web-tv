@@ -27,6 +27,9 @@ let mediaQuery: MediaQueryList | undefined
 const sourceConfigId = computed(() => String(route.params.sourceConfigId ?? ''))
 const vodId = computed(() => String(route.params.vodId ?? ''))
 const catalogState = computed(() => parseVodCatalogRouteState(route.query))
+const preferredSourceName = computed(
+  () => detail.value?.preferred_source_name ?? detail.value?.play_sources[0]?.source_name ?? null,
+)
 const backTarget = computed(() => ({
   name: 'vod',
   query: buildVodCatalogQuery({
@@ -54,6 +57,7 @@ async function loadDetail() {
   try {
     detail.value = await getVodDetail({
       source_config_id: sourceConfigId.value,
+      site_key: catalogState.value.siteKey,
       vod_id: vodId.value,
     })
   } catch (error) {
@@ -64,18 +68,21 @@ async function loadDetail() {
   }
 }
 
-async function playEpisode(groupSourceName: string, episodeIndex: number) {
+async function playEpisode(episodeIndex: number) {
   if (!detail.value?.vod_id) return
+  const sourceName = preferredSourceName.value
+  if (!sourceName) return
 
-  const key = `${groupSourceName}:${episodeIndex}`
+  const key = `${sourceName}:${episodeIndex}`
   episodeLoadingKey.value = key
   episodeError.value = null
 
   try {
     const episode: VodEpisodePlayResponse = await getVodEpisodePlay({
       source_config_id: sourceConfigId.value,
+      site_key: catalogState.value.siteKey,
       vod_id: detail.value.vod_id,
-      source_name: groupSourceName,
+      source_name: sourceName,
       episode_index: episodeIndex,
     })
     await playback.loadEpisode(episode)
@@ -125,6 +132,7 @@ onBeforeUnmount(() => {
       :detail-error="detailError"
       :episode-loading-key="episodeLoadingKey"
       :episode-error="episodeError"
+      :preferred-source-name="preferredSourceName"
       :playback="playback"
       @go-back="goBack"
       @play-episode="playEpisode"
@@ -137,6 +145,7 @@ onBeforeUnmount(() => {
       :detail-error="detailError"
       :episode-loading-key="episodeLoadingKey"
       :episode-error="episodeError"
+      :preferred-source-name="preferredSourceName"
       :playback="playback"
       @go-back="goBack"
       @play-episode="playEpisode"

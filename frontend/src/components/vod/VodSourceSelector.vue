@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Search } from 'lucide-vue-next'
+import { RefreshCw, Search, Settings } from 'lucide-vue-next'
 import { NButton, NInput, NSelect } from 'naive-ui'
+import { RouterLink } from 'vue-router'
 
 withDefaults(defineProps<{
   sourceOptions: Array<{ label: string; value: string }>
@@ -16,6 +17,7 @@ withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
+  refresh: []
   'update:selectedSourceId': [value: string | null]
   'update:searchQuery': [value: string]
   search: []
@@ -25,9 +27,23 @@ const emit = defineEmits<{
 
 <template>
   <article class="glass-panel" :class="compact ? 'rounded-[1.5rem] p-4' : 'rounded-[2.25rem] p-6 sm:p-8'">
-    <div class="grid gap-4" :class="compact ? '' : 'xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]'">
+    <div class="grid gap-4">
       <div class="rounded-[1.5rem] border border-white/10 bg-black/18" :class="compact ? 'p-4' : 'p-5'">
-        <p class="text-sm uppercase tracking-[0.18em] text-white/42">Source</p>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <p class="text-sm uppercase tracking-[0.18em] text-white/42">Source</p>
+          <div class="flex items-center gap-2">
+            <RouterLink
+              to="/settings/sources"
+              class="tv-focus-card inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/6 px-4 text-sm text-white/82 transition hover:bg-white/10"
+            >
+              <Settings class="mr-2 h-4 w-4" aria-hidden="true" />
+              Source Settings
+            </RouterLink>
+            <NButton quaternary circle :loading="loading || sourceLoading" @click="emit('refresh')">
+              <template #icon><RefreshCw class="h-4 w-4" /></template>
+            </NButton>
+          </div>
+        </div>
         <NSelect
           class="mt-4"
           :value="selectedSourceId"
@@ -57,7 +73,6 @@ const emit = defineEmits<{
             </NButton>
           </div>
         </div>
-        <p v-if="!compact" class="mt-4 text-sm text-white/48">Choose a source, browse categories, or search by title.</p>
       </div>
     </div>
   </article>

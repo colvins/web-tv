@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { RefreshCw } from 'lucide-vue-next'
 import { NButton } from 'naive-ui'
 
 import type { VodBrowseCategory, VodBrowseItem } from '@/api/sourceConfigs'
@@ -46,34 +45,6 @@ const emit = defineEmits<{
 
 <template>
   <section class="grid gap-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
-    <div class="glass-panel rounded-[1.75rem] p-5">
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0">
-          <p class="text-xs uppercase tracking-[0.24em] text-white/42">VOD</p>
-          <h2 class="mt-2 truncate text-2xl font-semibold text-white">{{ headerSiteName }}</h2>
-          <p class="mt-2 text-sm text-white/56">{{ headerSourceName }}</p>
-        </div>
-        <NButton quaternary circle :loading="loading" @click="emit('refresh')">
-          <template #icon><RefreshCw class="h-4 w-4" /></template>
-        </NButton>
-      </div>
-
-      <div class="mt-4 grid grid-cols-3 gap-2 text-center text-xs text-white/60">
-        <div class="rounded-2xl border border-white/10 bg-black/18 px-3 py-2">
-          <p class="text-[11px] uppercase tracking-[0.16em] text-white/38">结果</p>
-          <p class="mt-1 text-sm font-semibold text-white">{{ totalResults }}</p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-black/18 px-3 py-2">
-          <p class="text-[11px] uppercase tracking-[0.16em] text-white/38">页码</p>
-          <p class="mt-1 text-sm font-semibold text-white">{{ pageLabel }}</p>
-        </div>
-        <div class="rounded-2xl border border-white/10 bg-black/18 px-3 py-2">
-          <p class="text-[11px] uppercase tracking-[0.16em] text-white/38">站点</p>
-          <p class="mt-1 truncate text-sm font-semibold text-white">{{ selectedSiteKey ?? '未选' }}</p>
-        </div>
-      </div>
-    </div>
-
     <div v-if="loadError" class="glass-panel rounded-[1.5rem] border border-red-300/18 bg-red-400/10 p-4 text-red-100">
       {{ loadError }}
     </div>
@@ -98,6 +69,7 @@ const emit = defineEmits<{
         :source-loading="sourceLoading"
         :search-loading="searchLoading"
         :has-search-filter="hasSearchFilter"
+        @refresh="emit('refresh')"
         @update:selected-source-id="(value) => emit('update:selectedSourceId', value)"
         @update:search-query="(value) => emit('update:searchQuery', value)"
         @search="emit('search')"

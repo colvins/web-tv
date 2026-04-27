@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 import type { VodPlaySourceSummary } from '@/api/sourceConfigs'
 
 const props = withDefaults(defineProps<{
   playSources: VodPlaySourceSummary[]
+  sourceName?: string | null
   episodeLoadingKey: string | null
   selectedSourceName: string | null
   selectedEpisodeIndex: number | null
   compact?: boolean
 }>(), {
+  sourceName: null,
   compact: false,
 })
 
@@ -17,49 +19,16 @@ const emit = defineEmits<{
   playEpisode: [sourceName: string, episodeIndex: number]
 }>()
 
-const activeSourceName = ref<string | null>(null)
-
 const visibleSources = computed(() => {
-  if (props.playSources.length <= 1) return props.playSources
-  const sourceName = activeSourceName.value ?? props.selectedSourceName ?? props.playSources[0]?.source_name ?? null
-  return props.playSources.filter((group) => group.source_name === sourceName)
+  const preferredName = props.sourceName ?? props.selectedSourceName ?? props.playSources[0]?.source_name ?? null
+  if (!preferredName) return props.playSources.slice(0, 1)
+  const matched = props.playSources.filter((group) => group.source_name === preferredName)
+  return matched.length ? matched : props.playSources.slice(0, 1)
 })
-
-watch(
-  () => [props.playSources, props.selectedSourceName] as const,
-  ([playSources, selectedSourceName]) => {
-    const fallbackName = selectedSourceName ?? playSources[0]?.source_name ?? null
-    if (!fallbackName) {
-      activeSourceName.value = null
-      return
-    }
-    const stillExists = playSources.some((group) => group.source_name === activeSourceName.value)
-    if (!stillExists || selectedSourceName) {
-      activeSourceName.value = fallbackName
-    }
-  },
-  { immediate: true },
-)
 </script>
 
 <template>
   <div class="grid gap-3">
-    <div v-if="playSources.length > 1" class="flex flex-wrap gap-2">
-      <button
-        v-for="group in playSources"
-        :key="`tab-${group.source_name}`"
-        type="button"
-        class="rounded-full border px-3 py-1.5 text-xs transition"
-        :class="
-          activeSourceName === group.source_name
-            ? 'border-white/32 bg-white text-black'
-            : 'border-white/12 bg-black/18 text-white/82 hover:border-white/22 hover:bg-white/10'
-        "
-        @click="activeSourceName = group.source_name"
-      >
-        {{ group.source_name }}
-      </button>
-    </div>
     <article
       v-for="group in visibleSources"
       :key="group.source_name"

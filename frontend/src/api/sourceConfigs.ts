@@ -311,6 +311,7 @@ export type VodBrowseDetailResponse = {
   actor: string | null
   director: string | null
   description: string | null
+  preferred_source_name?: string | null
   play_sources: VodPlaySourceSummary[]
 }
 
@@ -509,17 +510,20 @@ export function getLatestSourceSnapshot(sourceConfigId: string): Promise<SourceS
   return apiRequest<SourceSnapshot>(`/configs/${sourceConfigId}/snapshot/latest`)
 }
 
-export function getVodCategories(sourceConfigId: string): Promise<VodBrowseCategoriesResponse> {
+export function getVodCategories(sourceConfigId: string, siteKey?: string | null): Promise<VodBrowseCategoriesResponse> {
   const query = new URLSearchParams({ source_config_id: sourceConfigId })
+  if (siteKey) query.set('site_key', siteKey)
   return apiRequest<VodBrowseCategoriesResponse>(`/vod/categories?${query.toString()}`)
 }
 
 export function getVodList(params: {
   source_config_id: string
+  site_key?: string | null
   type_id?: string | number | null
   page?: number
 }): Promise<VodBrowsePageResponse> {
   const query = new URLSearchParams({ source_config_id: params.source_config_id })
+  if (params.site_key) query.set('site_key', params.site_key)
   if (params.type_id !== undefined && params.type_id !== null && params.type_id !== '') {
     query.set('type_id', String(params.type_id))
   }
@@ -529,6 +533,7 @@ export function getVodList(params: {
 
 export function searchVod(params: {
   source_config_id: string
+  site_key?: string | null
   q: string
   page?: number
 }): Promise<VodBrowsePageResponse> {
@@ -536,23 +541,27 @@ export function searchVod(params: {
     source_config_id: params.source_config_id,
     q: params.q,
   })
+  if (params.site_key) query.set('site_key', params.site_key)
   if (params.page) query.set('page', String(params.page))
   return apiRequest<VodBrowsePageResponse>(`/vod/search?${query.toString()}`)
 }
 
 export function getVodDetail(params: {
   source_config_id: string
+  site_key?: string | null
   vod_id: string | number
 }): Promise<VodBrowseDetailResponse> {
   const query = new URLSearchParams({
     source_config_id: params.source_config_id,
     vod_id: String(params.vod_id),
   })
+  if (params.site_key) query.set('site_key', params.site_key)
   return apiRequest<VodBrowseDetailResponse>(`/vod/detail?${query.toString()}`)
 }
 
 export function getVodEpisodePlay(params: {
   source_config_id: string
+  site_key?: string | null
   vod_id: string | number
   source_name: string
   episode_index: number
@@ -563,6 +572,7 @@ export function getVodEpisodePlay(params: {
     source_name: params.source_name,
     episode_index: String(params.episode_index),
   })
+  if (params.site_key) query.set('site_key', params.site_key)
   return apiRequest<VodEpisodePlayResponse>(`/vod/episode-play?${query.toString()}`)
 }
 

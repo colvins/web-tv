@@ -284,6 +284,7 @@ def _catalog_detail(candidate: CollectorSiteCandidate, item: dict[str, Any]) -> 
         "actor": _string_or_none(item.get("vod_actor")),
         "director": _string_or_none(item.get("vod_director")),
         "description": _description(item),
+        "preferred_source_name": _preferred_play_source_name(item),
         "play_sources": _play_sources_summary(item),
     }
 
@@ -316,6 +317,17 @@ def _play_sources_summary(item: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return summaries
+
+
+def _preferred_play_source_name(item: dict[str, Any]) -> str | None:
+    groups = _play_source_groups(item)
+    if not groups:
+        return None
+    ranked = sorted(
+        enumerate(groups),
+        key=lambda pair: (-_play_source_priority(pair[1]), pair[0]),
+    )
+    return ranked[0][1]["source_name"] if ranked else None
 
 
 def _category_rows(categories: list[Any]) -> list[dict[str, Any]]:
@@ -397,6 +409,38 @@ def _play_source_groups(item: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return groups
+
+
+def _play_source_priority(group: dict[str, Any]) -> int:
+    source_name = str(group.get("source_name") or "").strip().lower()
+    episodes = group.get("episodes") if isinstance(group.get("episodes"), list) else []
+    stream_urls = [str(entry.get("stream_url") or "").strip() for entry in episodes if isinstance(entry, dict)]
+    non_empty_urls = [url for url in stream_urls if url]
+    guesses = {_stream_type_guess(url) for url in non_empty_urls}
+
+    score = 0
+    if non_empty_urls:
+        score += 20
+    else:
+        score -= 1000
+
+    if "m3u8" in source_name or "hls" in source_name:
+        score += 300
+    elif "mp4" in source_name:
+        score += 220
+
+    if "hls_m3u8" in guesses:
+        score += 280
+    elif "mp4" in guesses:
+        score += 220
+    elif guesses.intersection({"mkv", "webm", "mov", "m4v", "direct_file"}):
+        score += 180
+    elif guesses.intersection({"ts", "mp3"}):
+        score += 80
+    elif guesses:
+        score += 10
+
+    return score
 
 
 def _description(item: dict[str, Any]) -> str | None:

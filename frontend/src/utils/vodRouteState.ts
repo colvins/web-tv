@@ -2,6 +2,7 @@ import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 
 export type VodCatalogRouteState = {
   sourceId: string | null
+  siteKey: string | null
   categoryId: string | null
   query: string
   page: number
@@ -19,6 +20,7 @@ export function parseVodCatalogRouteState(query: LocationQuery): VodCatalogRoute
 
   return {
     sourceId: getQueryValue(query.source),
+    siteKey: getQueryValue(query.site),
     categoryId: getQueryValue(query.category),
     query: (getQueryValue(query.q) ?? '').trim(),
     page: Number.isFinite(pageValue) && pageValue > 0 ? pageValue : 1,
@@ -30,6 +32,9 @@ export function buildVodCatalogQuery(state: Partial<VodCatalogRouteState>): Loca
 
   if (state.sourceId) {
     query.source = state.sourceId
+  }
+  if (state.siteKey) {
+    query.site = state.siteKey
   }
   if (state.categoryId) {
     query.category = state.categoryId
@@ -45,5 +50,5 @@ export function buildVodCatalogQuery(state: Partial<VodCatalogRouteState>): Loca
 }
 
 export function getVodCatalogRouteKey(state: VodCatalogRouteState): string {
-  return JSON.stringify([state.sourceId, state.categoryId, state.query, state.page])
+  return JSON.stringify([state.sourceId, state.siteKey, state.categoryId, state.query, state.page])
 }

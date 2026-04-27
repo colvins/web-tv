@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import {
   getVodCategories,
+  getCurrentVodSite,
   getVodList,
   listSourceConfigs,
   searchVod,
@@ -21,8 +22,6 @@ import {
   parseVodCatalogRouteState,
   type VodCatalogRouteState,
 } from '@/utils/vodRouteState'
-
-const VOD_SOURCE_STORAGE_KEY = 'webtv.vod.selectedSourceConfigId'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,18 +101,6 @@ function normalizeRouteStateCategory(
   }
 }
 
-function restoreSavedSourceId() {
-  return window.localStorage.getItem(VOD_SOURCE_STORAGE_KEY)
-}
-
-function persistSelectedSourceId(sourceId: string | null) {
-  if (sourceId) {
-    window.localStorage.setItem(VOD_SOURCE_STORAGE_KEY, sourceId)
-    return
-  }
-  window.localStorage.removeItem(VOD_SOURCE_STORAGE_KEY)
-}
-
 function resetVodState() {
   categoriesResponse.value = null
   pageResponse.value = null
@@ -126,6 +113,7 @@ function resetVodState() {
 function buildCatalogRouteState(overrides: Partial<VodCatalogRouteState> = {}): VodCatalogRouteState {
   return {
     sourceId: overrides.sourceId ?? selectedSourceId.value,
+    siteKey: overrides.siteKey ?? pageResponse.value?.site.site_key ?? categoriesResponse.value?.site.site_key ?? null,
     categoryId: overrides.categoryId ?? selectedCategoryId.value,
     query: overrides.query ?? submittedQuery.value,
     page: overrides.page ?? pageResponse.value?.page ?? 1,
@@ -133,16 +121,18 @@ function buildCatalogRouteState(overrides: Partial<VodCatalogRouteState> = {}): 
 }
 
 async function fetchSourceCatalog(sourceId: string, routeState: VodCatalogRouteState) {
-  const categories = await getVodCategories(sourceId)
+  const categories = await getVodCategories(sourceId, routeState.siteKey)
   const normalizedRouteState = normalizeRouteStateCategory(routeState, categories)
   const page = normalizedRouteState.query
     ? await searchVod({
         source_config_id: sourceId,
+        site_key: normalizedRouteState.siteKey,
         q: normalizedRouteState.query,
         page: normalizedRouteState.page,
       })
     : await getVodList({
         source_config_id: sourceId,
+        site_key: normalizedRouteState.siteKey,
         type_id: normalizedRouteState.categoryId,
         page: normalizedRouteState.page,
       })
@@ -154,7 +144,6 @@ function applyCatalogState(
   catalog: { categories: VodBrowseCategoriesResponse; page: VodBrowsePageResponse; routeState: VodCatalogRouteState },
 ) {
   selectedSourceId.value = sourceId
-  persistSelectedSourceId(sourceId)
   categoriesResponse.value = catalog.categories
   pageResponse.value = catalog.page
   selectedCategoryId.value = catalog.routeState.categoryId
@@ -168,25 +157,29 @@ async function bootstrap() {
   loading.value = true
   loadError.value = null
   try {
-    const sourceList = await listSourceConfigs()
+    const [sourceList, currentVodSite] = await Promise.all([listSourceConfigs(), getCurrentVodSite()])
     sources.value = sourceList
 
     const routeState = parseVodCatalogRouteState(route.query)
     const enabledIds = new Set(sourceList.filter((source) => source.enabled && source.vod_site_count > 0).map((source) => source.id))
-    const currentSelection = selectedSourceId.value
-    const savedSelection = restoreSavedSourceId()
     const candidateIds = [
       routeState.sourceId && enabledIds.has(routeState.sourceId) ? routeState.sourceId : null,
-      currentSelection && enabledIds.has(currentSelection) ? currentSelection : null,
-      savedSelection && enabledIds.has(savedSelection) ? savedSelection : null,
+      currentVodSite?.source_config_id && enabledIds.has(currentVodSite.source_config_id) ? currentVodSite.source_config_id : null,
       ...enabledSources.value.map((source) => source.id),
     ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
 
     for (const sourceId of candidateIds) {
       try {
-        const catalog = await fetchSourceCatalog(sourceId, routeState)
+        const initialRouteState =
+          !routeState.sourceId && currentVodSite?.source_config_id === sourceId
+            ? { ...routeState, sourceId, siteKey: currentVodSite.site_key }
+            : { ...routeState, sourceId }
+        const catalog = await fetchSourceCatalog(sourceId, initialRouteState)
         applyCatalogState(sourceId, catalog)
-        if (routeState.sourceId !== sourceId || getVodCatalogRouteKey({ ...routeState, sourceId }) !== getVodCatalogRouteKey({ ...catalog.routeState, sourceId })) {
+        if (
+          routeState.sourceId !== sourceId ||
+          getVodCatalogRouteKey(initialRouteState) !== getVodCatalogRouteKey({ ...catalog.routeState, sourceId })
+        ) {
           await router.replace({
             name: 'vod',
             query: buildVodCatalogQuery({ ...catalog.routeState, sourceId }),
@@ -199,7 +192,6 @@ async function bootstrap() {
     }
 
     selectedSourceId.value = null
-    persistSelectedSourceId(null)
     resetVodState()
     noUsableSource.value = true
   } catch (error) {
@@ -215,7 +207,6 @@ async function syncCatalogFromRoute() {
 
   if (!routeState.sourceId) {
     selectedSourceId.value = null
-    persistSelectedSourceId(null)
     resetVodState()
     noUsableSource.value = false
     return
@@ -253,6 +244,7 @@ async function runSearch(page = 1) {
       name: 'vod',
       query: buildVodCatalogQuery({
         sourceId: selectedSourceId.value,
+        siteKey: buildCatalogRouteState().siteKey,
         categoryId: selectedCategoryId.value,
         query: '',
         page: 1,
@@ -266,6 +258,7 @@ async function runSearch(page = 1) {
     name: 'vod',
     query: buildVodCatalogQuery({
       sourceId: selectedSourceId.value,
+      siteKey: buildCatalogRouteState().siteKey,
       categoryId: null,
       query,
       page,
@@ -280,6 +273,7 @@ async function selectCategory(categoryId: string | null) {
     name: 'vod',
     query: buildVodCatalogQuery({
       sourceId: selectedSourceId.value,
+      siteKey: buildCatalogRouteState().siteKey,
       categoryId,
       query: '',
       page: 1,
@@ -306,6 +300,7 @@ async function changePage(direction: -1 | 1) {
     name: 'vod',
     query: buildVodCatalogQuery({
       sourceId: selectedSourceId.value,
+      siteKey: buildCatalogRouteState().siteKey,
       categoryId: isSearchMode.value ? null : selectedCategoryId.value,
       query: submittedQuery.value,
       page: nextPage,
@@ -322,6 +317,7 @@ function onSourceChange(value: string | null) {
     name: 'vod',
     query: buildVodCatalogQuery({
       sourceId: value,
+      siteKey: null,
       categoryId: null,
       query: '',
       page: 1,
