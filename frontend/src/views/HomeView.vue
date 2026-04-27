@@ -1,20 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 
 import { ApiError } from '@/api/client'
 import { getCurrentVodSite, getVodList, type CurrentVodSite, type VodBrowseItem } from '@/api/sourceConfigs'
 import HomeContinueWatchingRail from '@/components/home/HomeContinueWatchingRail.vue'
 import HomeHeroCarousel from '@/components/home/HomeHeroCarousel.vue'
-import { useAppStore } from '@/stores/app'
-
-const appStore = useAppStore()
+import { listRecentVodPlayback, type RecentVodPlaybackItem } from '@/utils/recentVodPlayback'
 
 const currentVodSite = ref<CurrentVodSite | null>(null)
 const latestItems = ref<VodBrowseItem[]>([])
 const heroLoading = ref(false)
 const heroError = ref<string | null>(null)
-
-const recentItems = computed(() => appStore.recentVodPlayback)
+const recentItems = ref<RecentVodPlaybackItem[]>([])
 
 async function loadHomeHero() {
   heroLoading.value = true
@@ -43,7 +40,7 @@ async function loadHomeHero() {
 }
 
 onMounted(() => {
-  appStore.ensurePersistentStateLoaded()
+  recentItems.value = listRecentVodPlayback()
   void loadHomeHero()
 })
 </script>

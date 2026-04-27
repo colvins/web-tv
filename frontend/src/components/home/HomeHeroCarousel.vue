@@ -182,6 +182,5 @@ watch(
 .hero-scroll {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
 }
 </style>

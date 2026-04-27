@@ -8,7 +8,7 @@ import { getVodDetail, getVodEpisodePlay, type VodBrowseDetailResponse, type Vod
 import VodDetailDesktopLayout from '@/components/vod/VodDetailDesktopLayout.vue'
 import VodDetailMobileLayout from '@/components/vod/VodDetailMobileLayout.vue'
 import { useVodPlayback } from '@/composables/useVodPlayback'
-import { useAppStore } from '@/stores/app'
+import { recordRecentVodPlayback } from '@/utils/recentVodPlayback'
 import { buildVodCatalogQuery, parseVodCatalogRouteState } from '@/utils/vodRouteState'
 
 const route = useRoute()
@@ -22,7 +22,6 @@ const episodeLoadingKey = ref<string | null>(null)
 const episodeError = ref<string | null>(null)
 const playback = useVodPlayback()
 const isDesktopLayout = ref(true)
-const appStore = useAppStore()
 
 let mediaQuery: MediaQueryList | undefined
 
@@ -88,7 +87,7 @@ async function playEpisode(episodeIndex: number) {
       episode_index: episodeIndex,
     })
     await playback.loadEpisode(episode)
-    appStore.recordRecentVodPlayback({
+    recordRecentVodPlayback({
       sourceConfigId: sourceConfigId.value,
       siteKey: catalogState.value.siteKey,
       vodId: String(detail.value.vod_id),

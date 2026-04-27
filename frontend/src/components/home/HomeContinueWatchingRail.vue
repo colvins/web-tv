@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
-import type { RecentVodPlaybackItem } from '@/stores/app'
 import VodPoster from '@/components/vod/VodPoster.vue'
+import type { RecentVodPlaybackItem } from '@/utils/recentVodPlayback'
 import { buildVodCatalogQuery } from '@/utils/vodRouteState'
 
 const props = defineProps<{
   items: RecentVodPlaybackItem[]
 }>()
 
+const router = useRouter()
 const railRef = ref<HTMLElement | null>(null)
 const canScrollLeft = ref(false)
 const canScrollRight = ref(false)
@@ -51,6 +53,10 @@ function scrollByCard(direction: -1 | 1) {
     left: direction * (cardWidth + 20),
     behavior: 'smooth',
   })
+}
+
+function openDetail(item: RecentVodPlaybackItem) {
+  void router.push(detailLocation(item))
 }
 
 onMounted(async () => {
@@ -119,29 +125,30 @@ watch(
         class="continue-scroll flex gap-5 overflow-x-auto pb-5 [scrollbar-width:none]"
         @scroll="updateScrollState"
       >
-        <RouterLink
+        <button
           v-for="item in sortedItems"
           :key="`${item.sourceConfigId}-${item.vodId}`"
-          :to="detailLocation(item)"
+          type="button"
           data-rail-card
-          class="tv-focus-card glass-panel block min-w-[12rem] overflow-hidden rounded-[1.75rem] border border-white/10 p-3 sm:min-w-[14rem] sm:max-w-[16rem]"
+          class="tv-focus-card glass-panel block min-w-[9.5rem] overflow-hidden rounded-[1.4rem] border border-white/10 p-2.5 text-left sm:min-w-[14rem] sm:max-w-[16rem] sm:rounded-[1.75rem] sm:p-3"
+          @click="openDetail(item)"
         >
           <VodPoster
             :src="item.poster"
             :alt="item.name"
-            :class="'rounded-[1.2rem]'"
+            :class="'rounded-[1rem] sm:rounded-[1.2rem]'"
             aspect-class="aspect-[2/3]"
             image-class="h-full w-full object-cover"
           />
-          <div class="mt-4">
-            <h3 class="line-clamp-2 text-sm font-semibold text-white sm:text-base">{{ item.name }}</h3>
-            <p class="mt-2 line-clamp-1 text-xs text-white/54">{{ item.episodeName }}</p>
-            <div class="mt-3 flex flex-wrap gap-2 text-[11px] text-white/54">
+          <div class="mt-3 sm:mt-4">
+            <h3 class="line-clamp-2 text-[13px] font-semibold text-white sm:text-base">{{ item.name }}</h3>
+            <p class="mt-1.5 line-clamp-1 text-[11px] text-white/54 sm:mt-2 sm:text-xs">{{ item.episodeName }}</p>
+            <div class="mt-2.5 flex flex-wrap gap-1.5 text-[10px] text-white/54 sm:mt-3 sm:gap-2 sm:text-[11px]">
               <span v-if="item.remarks" class="rounded-full border border-white/10 bg-white/6 px-2.5 py-1">{{ item.remarks }}</span>
               <span v-if="item.year" class="rounded-full border border-white/10 bg-white/6 px-2.5 py-1">{{ item.year }}</span>
             </div>
           </div>
-        </RouterLink>
+        </button>
       </div>
     </div>
   </section>
@@ -155,6 +162,5 @@ watch(
 .continue-scroll {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
 }
 </style>
