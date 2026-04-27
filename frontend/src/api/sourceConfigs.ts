@@ -247,6 +247,9 @@ export type VodBrowseSite = {
 export type VodBrowseCategory = {
   type_id: number | string | null
   type_name: string | null
+  parent_type_id?: number | string | null
+  parent_type_name?: string | null
+  has_content?: boolean
 }
 
 export type VodBrowseItem = {

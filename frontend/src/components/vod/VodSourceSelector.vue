@@ -54,9 +54,7 @@ const emit = defineEmits<{
             </NButton>
           </div>
         </div>
-        <p class="mt-4 text-sm text-white/48">
-          Search and category browsing use read-only collector metadata only.
-        </p>
+        <p class="mt-4 text-sm text-white/48">Choose a source, browse categories, or search by title.</p>
       </div>
     </div>
   </article>

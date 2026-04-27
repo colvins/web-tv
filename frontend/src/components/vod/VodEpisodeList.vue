@@ -27,18 +27,8 @@ const emit = defineEmits<{
     >
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h4 class="text-sm font-semibold text-white">{{ group.source_name }}</h4>
-        <div class="flex flex-wrap gap-2 text-xs text-white/60">
-          <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1">{{ group.episode_count }} episodes</span>
-          <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1">{{ group.has_play_urls ? 'URLs stored' : 'No URLs' }}</span>
-        </div>
-      </div>
-      <div class="mt-3 flex flex-wrap gap-2">
-        <span
-          v-for="episode in group.sample_episode_names"
-          :key="episode"
-          class="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-xs text-white/64"
-        >
-          {{ episode }}
+        <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-xs text-white/60">
+          {{ group.episode_count }} episodes
         </span>
       </div>
       <div class="mt-4 flex flex-wrap gap-2">

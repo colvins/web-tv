@@ -35,6 +35,8 @@ const backTarget = computed(() => ({
   }),
 }))
 
+const cleanDescription = computed(() => detail.value?.description?.trim() ?? '')
+
 async function loadDetail() {
   if (!sourceConfigId.value || !vodId.value) {
     detail.value = null
@@ -112,7 +114,6 @@ watch(
               <ChevronLeft class="h-4 w-4" aria-hidden="true" />
               Back to catalog
             </button>
-            <span class="rounded-full border border-white/10 bg-white/6 px-3 py-1">Metadata-only playback flow</span>
           </div>
           <h2 class="mt-4 text-3xl font-semibold text-white sm:text-5xl">
             {{ detail?.name ?? 'VOD Detail' }}
@@ -158,7 +159,7 @@ watch(
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm uppercase tracking-[0.2em] text-white/40">Player</p>
-              <p class="mt-2 text-sm text-white/58">Select an episode and keep playback controls in view.</p>
+              <p class="mt-2 text-sm text-white/58">Select an episode and keep the player in view.</p>
             </div>
             <span class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/54">
               {{ detail.play_sources.length }} source groups
@@ -171,9 +172,8 @@ watch(
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm uppercase tracking-[0.2em] text-white/40">Episodes</p>
-              <p class="mt-2 text-sm text-white/58">Choose a play source and episode without leaving the player area.</p>
+              <p class="mt-2 text-sm text-white/58">Choose a source and episode without leaving the player area.</p>
             </div>
-            <span class="text-xs text-white/46">URLs remain server-hidden until episode play is requested</span>
           </div>
           <VodEpisodeList
             :play-sources="detail.play_sources"
@@ -209,27 +209,7 @@ watch(
 
         <article class="glass-panel rounded-[2.25rem] p-5 sm:p-6">
           <p class="text-xs uppercase tracking-[0.16em] text-white/40">Description</p>
-          <p class="mt-3 text-sm leading-7 text-white/74">
-            {{ detail.description ?? 'No description returned by the collector.' }}
-          </p>
-        </article>
-
-        <article class="glass-panel rounded-[2.25rem] p-5 sm:p-6">
-          <p class="text-xs uppercase tracking-[0.16em] text-white/40">Collector metadata</p>
-          <div class="mt-3 grid gap-3 text-sm text-white/70">
-            <p>Site: {{ detail.site.site_name ?? detail.site.site_key ?? 'Unknown' }}</p>
-            <p>Host: {{ detail.site.api_host ?? 'Unknown' }}</p>
-            <p>Path: {{ detail.site.api_path ?? 'Unknown' }}</p>
-          </div>
-          <div class="mt-4 flex flex-wrap gap-2">
-            <span
-              v-for="queryKey in detail.site.api_query_keys"
-              :key="queryKey"
-              class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/62"
-            >
-              {{ queryKey }}
-            </span>
-          </div>
+          <p class="mt-3 text-sm leading-7 text-white/74">{{ cleanDescription || 'No description available.' }}</p>
         </article>
       </aside>
     </div>

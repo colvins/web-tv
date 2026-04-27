@@ -46,9 +46,9 @@ const lastLoadedRouteKey = ref<string | null>(null)
 
 const sourceOptions = computed(() =>
   sources.value
-    .filter((source) => source.enabled)
+    .filter((source) => source.enabled && source.vod_site_count > 0)
     .map((source) => ({
-      label: `${source.name} · ${source.latest_detected_format ?? source.source_type.toUpperCase()} · VOD ${source.vod_site_count} · ${source.latest_import_status?.toUpperCase() ?? 'NEW'}`,
+      label: `${source.name} · ${source.vod_site_count} VOD source${source.vod_site_count > 1 ? 's' : ''}`,
       value: source.id,
     })),
 )
@@ -57,13 +57,13 @@ const selectedSource = computed(
   () => sources.value.find((source) => source.id === selectedSourceId.value) ?? null,
 )
 
-const headerSiteName = computed(() => pageResponse.value?.site.site_name ?? categoriesResponse.value?.site.site_name ?? 'Generic collector')
+const headerSiteName = computed(() => pageResponse.value?.site.site_name ?? categoriesResponse.value?.site.site_name ?? 'VOD Library')
 const headerSourceName = computed(() => pageResponse.value?.site.source_name ?? categoriesResponse.value?.site.source_name ?? selectedSource.value?.name ?? 'VOD Source')
 const pageLabel = computed(() => `${pageResponse.value?.page ?? 1} / ${pageResponse.value?.pagecount ?? 1}`)
 const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
-const enabledSources = computed(() => sources.value.filter((source) => source.enabled))
+const enabledSources = computed(() => sources.value.filter((source) => source.enabled && source.vod_site_count > 0))
 
 function restoreSavedSourceId() {
   return window.localStorage.getItem(VOD_SOURCE_STORAGE_KEY)
@@ -137,7 +137,7 @@ async function bootstrap() {
     sources.value = sourceList
 
     const routeState = parseVodCatalogRouteState(route.query)
-    const enabledIds = new Set(sourceList.filter((source) => source.enabled).map((source) => source.id))
+    const enabledIds = new Set(sourceList.filter((source) => source.enabled && source.vod_site_count > 0).map((source) => source.id))
     const currentSelection = selectedSourceId.value
     const savedSelection = restoreSavedSourceId()
     const candidateIds = [
@@ -308,9 +308,7 @@ onMounted(bootstrap)
         <div class="max-w-4xl">
           <p class="text-sm uppercase tracking-[0.28em] text-white/44">VOD Browser</p>
           <h2 class="mt-4 text-4xl font-semibold text-white sm:text-6xl">{{ headerSiteName }}</h2>
-          <p class="mt-5 max-w-3xl text-base leading-7 text-white/60">
-            Browse generic MacCMS-style JSON collector metadata only. Playback and spider runtime remain disabled.
-          </p>
+          <p class="mt-5 max-w-3xl text-base leading-7 text-white/60">Browse titles, jump into details, and start an episode quickly.</p>
         </div>
         <div class="flex flex-wrap gap-3">
           <RouterLink
@@ -356,11 +354,9 @@ onMounted(bootstrap)
       class="glass-panel flex min-h-[24rem] items-end rounded-[2.5rem] p-7 sm:p-10"
     >
       <div class="max-w-3xl">
-        <p class="text-sm uppercase tracking-[0.28em] text-white/42">No generic source</p>
-        <h2 class="mt-3 text-4xl font-semibold text-white sm:text-6xl">No compatible VOD collector is available yet</h2>
-        <p class="mt-5 text-base leading-7 text-white/58">
-          Import a source snapshot with a generic MacCMS-style JSON collector endpoint, or enable another source package.
-        </p>
+        <p class="text-sm uppercase tracking-[0.28em] text-white/42">No VOD source</p>
+        <h2 class="mt-3 text-4xl font-semibold text-white sm:text-6xl">No VOD source is ready yet</h2>
+        <p class="mt-5 text-base leading-7 text-white/58">Add or enable a source with catalog data in Source Settings.</p>
       </div>
     </div>
 
@@ -401,9 +397,7 @@ onMounted(bootstrap)
       <div class="max-w-3xl">
         <p class="text-sm uppercase tracking-[0.28em] text-white/42">No source selected</p>
         <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">Choose a VOD source to begin browsing</h2>
-        <p class="mt-5 text-base leading-7 text-white/58">
-          Pick one imported source package from the selector to bind all VOD browsing requests to that source_config_id.
-        </p>
+        <p class="mt-5 text-base leading-7 text-white/58">Pick a source from the selector to open its catalog.</p>
       </div>
     </div>
 

@@ -16,6 +16,9 @@ class VodCatalogSiteRead(BaseModel):
 class VodCategoryRead(BaseModel):
     type_id: int | str | None = None
     type_name: str | None = None
+    parent_type_id: int | str | None = None
+    parent_type_name: str | None = None
+    has_content: bool = True
 
 
 class VodCatalogItemRead(BaseModel):

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import html
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, status
@@ -14,6 +17,8 @@ from app.services import source_snapshots
 from app.services.source_configs import get_source_config
 
 REQUEST_TIMEOUT_SECONDS = 10
+MAX_CATEGORY_VALIDATION_CONCURRENCY = 6
+HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 @dataclass(frozen=True)
@@ -28,9 +33,10 @@ class CollectorSiteCandidate:
 async def list_categories(db: AsyncSession, source_config_id: uuid.UUID) -> dict[str, Any]:
     candidate = await _resolve_candidate_site(db, source_config_id)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list"}))
+    categories = await _validated_categories(candidate, _parse_categories(payload))
     return {
         "site": _serialize_site(candidate),
-        "categories": _parse_categories(payload),
+        "categories": categories,
     }
 
 
@@ -45,6 +51,7 @@ async def list_vods(
     if type_id:
         params["t"] = type_id
     payload = await _fetch_json(_build_url(candidate.api_url, params))
+    payload = await _with_missing_posters(candidate, payload)
     return _catalog_page(candidate, payload)
 
 
@@ -60,6 +67,7 @@ async def search_vods(
 
     candidate = await _resolve_candidate_site(db, source_config_id)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list", "wd": text, "pg": page}))
+    payload = await _with_missing_posters(candidate, payload)
     return _catalog_page(candidate, payload)
 
 
@@ -273,9 +281,46 @@ def _parse_categories(payload: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "type_id": item.get("type_id"),
                 "type_name": _string_or_none(item.get("type_name")),
+                "parent_type_id": item.get("type_pid", item.get("parent_id", item.get("type_id_1"))),
+                "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
+                "has_content": True,
             }
         )
     return parsed
+
+
+async def _validated_categories(
+    candidate: CollectorSiteCandidate,
+    categories: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not categories:
+        return []
+
+    semaphore = asyncio.Semaphore(MAX_CATEGORY_VALIDATION_CONCURRENCY)
+
+    async def validate(category: dict[str, Any]) -> dict[str, Any] | None:
+        type_id = category.get("type_id")
+        if type_id in (None, ""):
+            return category
+        async with semaphore:
+            try:
+                has_content = await _category_has_content(candidate, str(type_id))
+            except HTTPException:
+                return category
+        if not has_content:
+            return None
+        next_category = dict(category)
+        next_category["has_content"] = True
+        return next_category
+
+    validated = await asyncio.gather(*(validate(category) for category in categories))
+    return [category for category in validated if category is not None]
+
+
+async def _category_has_content(candidate: CollectorSiteCandidate, type_id: str) -> bool:
+    payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list", "t": type_id, "pg": 1}))
+    items = payload.get("list")
+    return isinstance(items, list) and len(items) > 0
 
 
 def _catalog_page(candidate: CollectorSiteCandidate, payload: dict[str, Any]) -> dict[str, Any]:
@@ -292,17 +337,17 @@ def _catalog_page(candidate: CollectorSiteCandidate, payload: dict[str, Any]) ->
         "pagecount": _int_value(payload.get("pagecount"), default=1),
         "total": _int_value(payload.get("total"), default=len(items)),
         "limit": _int_value(payload.get("limit")),
-        "items": [_catalog_item(item) for item in items if isinstance(item, dict)],
+        "items": [_catalog_item(candidate, item) for item in items if isinstance(item, dict)],
     }
 
 
-def _catalog_item(item: dict[str, Any]) -> dict[str, Any]:
+def _catalog_item(candidate: CollectorSiteCandidate, item: dict[str, Any]) -> dict[str, Any]:
     return {
         "vod_id": item.get("vod_id"),
         "name": _string_or_none(item.get("vod_name")) or "Untitled",
         "category_id": item.get("type_id"),
         "category_name": _string_or_none(item.get("type_name")),
-        "poster": _http_url(item.get("vod_pic")),
+        "poster": _normalize_media_url(item.get("vod_pic"), candidate.api_url),
         "year": _string_or_none(item.get("vod_year")),
         "area": _string_or_none(item.get("vod_area")),
         "remarks": _string_or_none(item.get("vod_remarks") or item.get("vod_remark")),
@@ -316,7 +361,7 @@ def _catalog_detail(candidate: CollectorSiteCandidate, item: dict[str, Any]) -> 
         "name": _string_or_none(item.get("vod_name")) or "Untitled",
         "category_id": item.get("type_id"),
         "category_name": _string_or_none(item.get("type_name")),
-        "poster": _http_url(item.get("vod_pic")),
+        "poster": _normalize_media_url(item.get("vod_pic"), candidate.api_url),
         "year": _string_or_none(item.get("vod_year")),
         "area": _string_or_none(item.get("vod_area")),
         "language": _string_or_none(item.get("vod_lang")),
@@ -410,7 +455,8 @@ def _description(item: dict[str, Any]) -> str | None:
     text = _string_or_none(item.get("vod_content")) or _string_or_none(item.get("vod_blurb"))
     if not text:
         return None
-    compact = " ".join(text.split())
+    plain = HTML_TAG_RE.sub(" ", html.unescape(text.replace("&nbsp;", " ")))
+    compact = " ".join(plain.split())
     return compact[:1200] if len(compact) > 1200 else compact
 
 
@@ -467,6 +513,22 @@ def _http_url(value: Any) -> str | None:
     return None
 
 
+def _normalize_media_url(value: Any, base_url: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if lowered.startswith(("http://", "https://")):
+        return text
+    if text.startswith("//"):
+        return f"https:{text}"
+    if base_url and text.startswith("/"):
+        return urljoin(base_url, text)
+    return None
+
+
 def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None
@@ -481,3 +543,45 @@ def _int_value(value: Any, default: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+async def _with_missing_posters(candidate: CollectorSiteCandidate, payload: dict[str, Any]) -> dict[str, Any]:
+    items = payload.get("list")
+    if not isinstance(items, list):
+        return payload
+
+    missing_ids = [
+        str(item.get("vod_id"))
+        for item in items
+        if isinstance(item, dict) and item.get("vod_id") not in (None, "") and not _normalize_media_url(item.get("vod_pic"), candidate.api_url)
+    ]
+    if not missing_ids:
+        return payload
+
+    try:
+        detail_payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": ",".join(missing_ids)}))
+    except HTTPException:
+        return payload
+    detail_items = detail_payload.get("list")
+    if not isinstance(detail_items, list):
+        return payload
+
+    posters_by_id = {
+        str(item.get("vod_id")): _normalize_media_url(item.get("vod_pic"), candidate.api_url)
+        for item in detail_items
+        if isinstance(item, dict) and item.get("vod_id") not in (None, "")
+    }
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        vod_id = item.get("vod_id")
+        if vod_id in (None, ""):
+            continue
+        if _normalize_media_url(item.get("vod_pic"), candidate.api_url):
+            continue
+        poster = posters_by_id.get(str(vod_id))
+        if poster:
+            item["vod_pic"] = poster
+
+    return payload
