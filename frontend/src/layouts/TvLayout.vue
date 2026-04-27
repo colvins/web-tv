@@ -21,6 +21,7 @@ type NavItem = {
 
 const route = useRoute()
 const isVodCatalogRoute = computed(() => route.name === 'vod')
+const isLiveRoute = computed(() => route.path === '/live' || route.path.startsWith('/live/'))
 
 const navItems: NavItem[] = [
   { label: 'Home', path: '/', icon: Home },
@@ -105,7 +106,7 @@ function isNavItemActive(path: string) {
           class="hidden sm:flex sm:w-auto sm:max-w-[11rem] lg:max-w-none"
         ></div>
         <RouterLink
-          v-else
+          v-else-if="!isLiveRoute"
           to="/search"
           class="tv-focus-card glass-panel hidden min-h-12 rounded-3xl px-5 py-3 text-sm font-medium text-white/78 sm:block"
         >
