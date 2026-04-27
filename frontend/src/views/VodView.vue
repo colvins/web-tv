@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { Film, RefreshCw, Search, Settings } from 'lucide-vue-next'
+import { ChevronLeft, Film, RefreshCw, Search, Settings } from 'lucide-vue-next'
 import { NButton, NInput, NSelect, useMessage } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 
 import {
   getCurrentVodSite,
+  getVodDetail,
   getVodCategories,
   getVodList,
   listSourceConfigs,
   searchVod,
+  type VodBrowseDetailResponse,
   type CurrentVodSite,
   type SourceConfig,
   type VodBrowseCategoriesResponse,
@@ -32,6 +34,9 @@ const loadError = ref<string | null>(null)
 const selectedCategoryId = ref<string | null>(null)
 const searchQuery = ref('')
 const submittedQuery = ref('')
+const detail = ref<VodBrowseDetailResponse | null>(null)
+const detailLoading = ref(false)
+const detailError = ref<string | null>(null)
 
 const sourceOptions = computed(() =>
   sources.value
@@ -52,6 +57,7 @@ const pageLabel = computed(() => `${pageResponse.value?.page ?? 1} / ${pageRespo
 const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
+const detailTitle = computed(() => detail.value?.name ?? 'Title detail')
 
 async function bootstrap() {
   loading.value = true
@@ -96,6 +102,8 @@ async function loadSource(sourceId: string, options: { quiet?: boolean } = {}) {
     const categories = await getVodCategories(sourceId)
     selectedSourceId.value = sourceId
     categoriesResponse.value = categories
+    detail.value = null
+    detailError.value = null
     selectedCategoryId.value = null
     submittedQuery.value = ''
     searchQuery.value = ''
@@ -159,10 +167,34 @@ async function runSearch(page = 1) {
 }
 
 async function selectCategory(categoryId: string | null) {
+  detail.value = null
+  detailError.value = null
   selectedCategoryId.value = categoryId
   submittedQuery.value = ''
   searchQuery.value = ''
   await loadListPage(1)
+}
+
+async function openDetail(item: VodBrowseItem) {
+  if (!selectedSourceId.value || item.vod_id === null || item.vod_id === undefined) return
+  detailLoading.value = true
+  detailError.value = null
+  try {
+    detail.value = await getVodDetail({
+      source_config_id: selectedSourceId.value,
+      vod_id: item.vod_id,
+    })
+  } catch (error) {
+    detailError.value = error instanceof ApiError ? error.message : 'Unable to load VOD detail'
+    message.error(detailError.value)
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+function closeDetail() {
+  detail.value = null
+  detailError.value = null
 }
 
 async function changePage(direction: -1 | 1) {
@@ -333,6 +365,7 @@ onMounted(bootstrap)
         :key="`${item.vod_id}-${item.name}`"
         class="tv-focus-card glass-panel overflow-hidden rounded-[2rem] p-4"
       >
+        <button type="button" class="block w-full text-left" @click="openDetail(item)">
         <div class="relative overflow-hidden rounded-[1.5rem] bg-white/6">
           <img
             v-if="item.poster"
@@ -366,6 +399,7 @@ onMounted(bootstrap)
             </span>
           </div>
         </div>
+        </button>
       </article>
     </div>
 
@@ -390,6 +424,124 @@ onMounted(bootstrap)
           <NButton round secondary :disabled="!canGoPrev" @click="changePage(-1)">Previous</NButton>
           <span class="min-w-24 text-center text-sm text-white/64">{{ pageLabel }}</span>
           <NButton round secondary :disabled="!canGoNext" @click="changePage(1)">Next</NButton>
+        </div>
+      </div>
+    </article>
+
+    <article v-if="detail || detailLoading || detailError" class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.26em] text-white/42">Detail</p>
+          <h3 class="mt-3 text-2xl font-semibold text-white sm:text-3xl">{{ detailTitle }}</h3>
+        </div>
+        <NButton round secondary @click="closeDetail">
+          <template #icon><ChevronLeft class="h-4 w-4" /></template>
+          Back to results
+        </NButton>
+      </div>
+
+      <div v-if="detailLoading" class="mt-6 grid gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div class="aspect-[3/4] animate-pulse rounded-[2rem] bg-white/8"></div>
+        <div class="space-y-4">
+          <div class="h-8 w-2/3 animate-pulse rounded-full bg-white/10"></div>
+          <div class="h-4 w-full animate-pulse rounded-full bg-white/8"></div>
+          <div class="h-4 w-5/6 animate-pulse rounded-full bg-white/8"></div>
+        </div>
+      </div>
+
+      <p v-else-if="detailError" class="mt-6 rounded-3xl border border-red-300/18 bg-red-400/10 p-4 text-sm text-red-100">
+        {{ detailError }}
+      </p>
+
+      <div v-else-if="detail" class="mt-6 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div class="overflow-hidden rounded-[2rem] border border-white/10 bg-white/6">
+          <img
+            v-if="detail.poster"
+            :src="detail.poster"
+            :alt="detail.name"
+            class="aspect-[3/4] w-full object-cover"
+          />
+          <div v-else class="flex aspect-[3/4] items-center justify-center text-white/30">
+            <Film class="h-16 w-16" />
+          </div>
+        </div>
+
+        <div class="space-y-5">
+          <div class="flex flex-wrap gap-2 text-xs text-white/62">
+            <span v-if="detail.category_name" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.category_name }}</span>
+            <span v-if="detail.year" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.year }}</span>
+            <span v-if="detail.area" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.area }}</span>
+            <span v-if="detail.language" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.language }}</span>
+            <span v-if="detail.remarks" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.remarks }}</span>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-white/40">Actor</p>
+              <p class="mt-2 text-sm leading-6 text-white/78">{{ detail.actor ?? 'Not provided' }}</p>
+            </div>
+            <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-white/40">Director</p>
+              <p class="mt-2 text-sm leading-6 text-white/78">{{ detail.director ?? 'Not provided' }}</p>
+            </div>
+          </div>
+
+          <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+            <p class="text-xs uppercase tracking-[0.16em] text-white/40">Description</p>
+            <p class="mt-3 text-sm leading-7 text-white/74">{{ detail.description ?? 'No description returned by the collector.' }}</p>
+          </div>
+
+          <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+            <p class="text-xs uppercase tracking-[0.16em] text-white/40">Collector metadata</p>
+            <div class="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-white/70">
+              <p>Site: {{ detail.site.site_name ?? detail.site.site_key ?? 'Unknown' }}</p>
+              <p>Host: {{ detail.site.api_host ?? 'Unknown' }}</p>
+              <p>Path: {{ detail.site.api_path ?? 'Unknown' }}</p>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span
+                v-for="queryKey in detail.site.api_query_keys"
+                :key="queryKey"
+                class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/62"
+              >
+                {{ queryKey }}
+              </span>
+            </div>
+          </div>
+
+          <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+            <div class="flex items-center justify-between gap-4">
+              <p class="text-xs uppercase tracking-[0.16em] text-white/40">Play sources</p>
+              <span class="text-xs text-white/46">Playback not implemented</span>
+            </div>
+            <div class="mt-4 grid gap-3">
+              <article
+                v-for="group in detail.play_sources"
+                :key="group.source_name"
+                class="rounded-[1.25rem] border border-white/10 bg-white/6 p-4"
+              >
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <h4 class="text-sm font-semibold text-white">{{ group.source_name }}</h4>
+                  <div class="flex flex-wrap gap-2 text-xs text-white/60">
+                    <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1">{{ group.episode_count }} episodes</span>
+                    <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1">{{ group.has_play_urls ? 'URLs stored' : 'No URLs' }}</span>
+                  </div>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <span
+                    v-for="episode in group.sample_episode_names"
+                    :key="episode"
+                    class="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-xs text-white/64"
+                  >
+                    {{ episode }}
+                  </span>
+                </div>
+              </article>
+              <p v-if="detail.play_sources.length === 0" class="text-sm text-white/54">
+                No play source groups were returned by the collector.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </article>

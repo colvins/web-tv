@@ -63,6 +63,43 @@ async def search_vods(
     return _catalog_page(candidate, payload)
 
 
+async def get_vod_detail(
+    db: AsyncSession,
+    source_config_id: uuid.UUID,
+    vod_id: str,
+) -> dict[str, Any]:
+    text = vod_id.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="vod_id cannot be empty")
+
+    candidate = await _resolve_candidate_site(db, source_config_id)
+    payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": text}))
+    items = payload.get("list")
+    if not isinstance(items, list) or not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VOD detail was not found in the upstream collector response",
+        )
+
+    selected = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict) and str(item.get("vod_id")) == text
+        ),
+        None,
+    )
+    if not isinstance(selected, dict):
+        selected = next((item for item in items if isinstance(item, dict)), None)
+    if not isinstance(selected, dict):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Upstream VOD collector detail response did not contain a usable item",
+        )
+
+    return _catalog_detail(candidate, selected)
+
+
 async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID) -> CollectorSiteCandidate:
     source_config = await get_source_config(db, source_config_id)
     if not source_config.enabled:
@@ -245,13 +282,87 @@ def _catalog_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _catalog_detail(candidate: CollectorSiteCandidate, item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "site": _serialize_site(candidate),
+        "vod_id": item.get("vod_id"),
+        "name": _string_or_none(item.get("vod_name")) or "Untitled",
+        "category_id": item.get("type_id"),
+        "category_name": _string_or_none(item.get("type_name")),
+        "poster": _http_url(item.get("vod_pic")),
+        "year": _string_or_none(item.get("vod_year")),
+        "area": _string_or_none(item.get("vod_area")),
+        "language": _string_or_none(item.get("vod_lang")),
+        "remarks": _string_or_none(item.get("vod_remarks") or item.get("vod_remark")),
+        "actor": _string_or_none(item.get("vod_actor")),
+        "director": _string_or_none(item.get("vod_director")),
+        "description": _description(item),
+        "play_sources": _play_sources_summary(item),
+    }
+
+
 def _serialize_site(candidate: CollectorSiteCandidate) -> dict[str, Any]:
+    parsed = urlparse(candidate.api_url)
     return {
         "source_config_id": candidate.source_config_id,
         "source_name": candidate.source_name,
         "site_key": candidate.site_key,
         "site_name": candidate.site_name,
+        "api_host": parsed.netloc or None,
+        "api_path": parsed.path or None,
+        "api_query_keys": sorted({key for key, _ in parse_qsl(parsed.query, keep_blank_values=True)}),
     }
+
+
+def _play_sources_summary(item: dict[str, Any]) -> list[dict[str, Any]]:
+    source_names = _split_sources(item.get("vod_play_from"))
+    source_payloads = _split_sources(item.get("vod_play_url"))
+    count = max(len(source_names), len(source_payloads))
+    groups: list[dict[str, Any]] = []
+    for index in range(count):
+        source_name = source_names[index] if index < len(source_names) and source_names[index] else f"Source {index + 1}"
+        payload = source_payloads[index] if index < len(source_payloads) else ""
+        episodes = _parse_episode_names(payload)
+        groups.append(
+            {
+                "source_name": source_name,
+                "episode_count": len(episodes),
+                "sample_episode_names": episodes[:8],
+                "has_play_urls": bool(payload.strip()),
+            }
+        )
+    return groups
+
+
+def _split_sources(value: Any) -> list[str]:
+    text = _string_or_none(value)
+    if not text:
+        return []
+    return [segment.strip() for segment in text.split("$$$")]
+
+
+def _parse_episode_names(value: str) -> list[str]:
+    names: list[str] = []
+    for segment in value.split("#"):
+        part = segment.strip()
+        if not part:
+            continue
+        if "$" in part:
+            name = part.split("$", 1)[0].strip()
+        else:
+            name = part
+        if not name:
+            name = f"Episode {len(names) + 1}"
+        names.append(name[:80])
+    return names
+
+
+def _description(item: dict[str, Any]) -> str | None:
+    text = _string_or_none(item.get("vod_content")) or _string_or_none(item.get("vod_blurb"))
+    if not text:
+        return None
+    compact = " ".join(text.split())
+    return compact[:1200] if len(compact) > 1200 else compact
 
 
 def _http_url(value: Any) -> str | None:

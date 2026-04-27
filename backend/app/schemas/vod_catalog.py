@@ -8,6 +8,9 @@ class VodCatalogSiteRead(BaseModel):
     source_name: str
     site_key: str | None = None
     site_name: str | None = None
+    api_host: str | None = None
+    api_path: str | None = None
+    api_query_keys: list[str] = []
 
 
 class VodCategoryRead(BaseModel):
@@ -38,3 +41,27 @@ class VodCatalogPageRead(BaseModel):
     total: int
     limit: int | None = None
     items: list[VodCatalogItemRead]
+
+
+class VodPlaySourceSummaryRead(BaseModel):
+    source_name: str
+    episode_count: int
+    sample_episode_names: list[str]
+    has_play_urls: bool
+
+
+class VodCatalogDetailRead(BaseModel):
+    site: VodCatalogSiteRead
+    vod_id: int | str | None = None
+    name: str
+    category_id: int | str | None = None
+    category_name: str | None = None
+    poster: str | None = None
+    year: str | None = None
+    area: str | None = None
+    language: str | None = None
+    remarks: str | None = None
+    actor: str | None = None
+    director: str | None = None
+    description: str | None = None
+    play_sources: list[VodPlaySourceSummaryRead]

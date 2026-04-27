@@ -198,6 +198,9 @@ export type VodBrowseSite = {
   source_name: string
   site_key: string | null
   site_name: string | null
+  api_host: string | null
+  api_path: string | null
+  api_query_keys: string[]
 }
 
 export type VodBrowseCategory = {
@@ -228,6 +231,30 @@ export type VodBrowsePageResponse = {
   total: number
   limit: number | null
   items: VodBrowseItem[]
+}
+
+export type VodPlaySourceSummary = {
+  source_name: string
+  episode_count: number
+  sample_episode_names: string[]
+  has_play_urls: boolean
+}
+
+export type VodBrowseDetailResponse = {
+  site: VodBrowseSite
+  vod_id: number | string | null
+  name: string
+  category_id: number | string | null
+  category_name: string | null
+  poster: string | null
+  year: string | null
+  area: string | null
+  language: string | null
+  remarks: string | null
+  actor: string | null
+  director: string | null
+  description: string | null
+  play_sources: VodPlaySourceSummary[]
 }
 
 export type CurrentVodSiteAnalysis = {
@@ -449,6 +476,17 @@ export function searchVod(params: {
   })
   if (params.page) query.set('page', String(params.page))
   return apiRequest<VodBrowsePageResponse>(`/vod/search?${query.toString()}`)
+}
+
+export function getVodDetail(params: {
+  source_config_id: string
+  vod_id: string | number
+}): Promise<VodBrowseDetailResponse> {
+  const query = new URLSearchParams({
+    source_config_id: params.source_config_id,
+    vod_id: String(params.vod_id),
+  })
+  return apiRequest<VodBrowseDetailResponse>(`/vod/detail?${query.toString()}`)
 }
 
 export function updateVodSite(id: string, enabled: boolean): Promise<VodSite> {
