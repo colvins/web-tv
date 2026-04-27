@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Search, SlidersHorizontal } from 'lucide-vue-next'
-import { NButton, NInput } from 'naive-ui'
+import { NButton, NInput, NSelect } from 'naive-ui'
 
 import LiveChannelCard from '@/components/live/LiveChannelCard.vue'
 import LivePlayer from '@/components/live/LivePlayer.vue'
 import type { ChannelPlaybackStatus, LivePlayback } from '@/composables/useLivePlayback'
 import type { LiveChannel, LiveChannelGroup } from '@/api/sourceConfigs'
 
-type PlaybackStatusFilter = 'all' | 'playing' | 'failed' | 'unknown'
-
 const props = defineProps<{
   groups: LiveChannelGroup[]
   channels: LiveChannel[]
   selectedGroupId: string | null
-  selectedGroupName: string
-  selectedPlaybackStatusFilter: PlaybackStatusFilter
   query: string
   loading: boolean
   togglingIds: Set<string>
@@ -27,7 +23,6 @@ const emit = defineEmits<{
   'update:query': [value: string]
   refresh: []
   selectGroup: [groupId: string | null]
-  selectPlaybackStatusFilter: [filter: PlaybackStatusFilter]
   selectChannel: [channel: LiveChannel]
   toggleChannel: [channel: LiveChannel, enabled: boolean]
 }>()
@@ -37,24 +32,21 @@ const queryModel = computed({
   set: (value: string) => emit('update:query', value),
 })
 
-const playbackFilterOptions: Array<{ value: PlaybackStatusFilter; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'playing', label: 'Playable' },
-  { value: 'failed', label: 'Failed' },
-  { value: 'unknown', label: 'Untested' },
-]
+const ALL_GROUP_VALUE = '__all__'
+
+const selectedGroupValue = computed(() => props.selectedGroupId ?? ALL_GROUP_VALUE)
+
+const groupOptions = computed(() => [
+  { label: 'All Groups', value: ALL_GROUP_VALUE },
+  ...props.groups.map((group) => ({
+    label: `${group.name} (${group.channel_count})`,
+    value: group.id,
+  })),
+])
 </script>
 
 <template>
   <section class="grid gap-5 pb-24 sm:gap-6 sm:pb-28">
-    <div class="glass-panel rounded-[2rem] p-5 sm:rounded-[2.5rem] sm:p-8">
-      <p class="text-sm uppercase tracking-[0.28em] text-white/42">Live TV</p>
-      <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">{{ selectedGroupName }}</h2>
-      <p class="mt-3 max-w-3xl text-sm leading-6 text-white/58">
-        Browse imported channels and play a selected stream directly in this page.
-      </p>
-    </div>
-
     <div class="live-mobile-sticky-player relative sticky top-2 z-30 -mx-2 px-2 pt-1 pb-2">
       <LivePlayer :playback="playback" />
     </div>
@@ -65,58 +57,16 @@ const playbackFilterOptions: Array<{ value: PlaybackStatusFilter; label: string 
           <NInput v-model:value="queryModel" round clearable placeholder="Search channels" class="w-full sm:min-w-72">
             <template #prefix><Search class="h-4 w-4 text-white/42" /></template>
           </NInput>
+          <NSelect
+            :value="selectedGroupValue"
+            :options="groupOptions"
+            placeholder="Channel group"
+            @update:value="(value) => emit('selectGroup', value === ALL_GROUP_VALUE ? null : String(value))"
+          />
           <NButton round secondary :loading="loading" class="min-h-12" @click="$emit('refresh')">
             <template #icon><SlidersHorizontal class="h-4 w-4" /></template>
             Refresh
           </NButton>
-        </div>
-
-        <div class="chip-scroller mt-3 -mx-1 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:none]">
-          <div class="flex min-w-max flex-nowrap gap-2">
-            <button
-              v-for="option in playbackFilterOptions"
-              :key="option.value"
-              class="tv-focus-card shrink-0 rounded-full border px-4 py-2 text-xs transition"
-              :class="
-                selectedPlaybackStatusFilter === option.value
-                  ? 'border-sky-300/28 bg-sky-400/12 text-white'
-                  : 'border-white/10 bg-white/6 text-white/58'
-              "
-              @click="$emit('selectPlaybackStatusFilter', option.value)"
-            >
-              {{ option.label }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="chip-scroller -mx-1 overflow-x-auto overscroll-x-contain px-1 pb-1 [scrollbar-width:none]">
-        <div class="flex min-w-max flex-nowrap gap-3">
-          <button
-            class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
-            :class="
-              selectedGroupId === null
-                ? 'border-aurora/40 bg-aurora/18 text-white'
-                : 'border-white/10 bg-white/6 text-white/62'
-            "
-            @click="$emit('selectGroup', null)"
-          >
-            All
-          </button>
-          <button
-            v-for="group in groups"
-            :key="group.id"
-            class="tv-focus-card shrink-0 rounded-full border px-5 py-3 text-sm transition sm:px-6 sm:py-3.5"
-            :class="
-              selectedGroupId === group.id
-                ? 'border-aurora/40 bg-aurora/18 text-white'
-                : 'border-white/10 bg-white/6 text-white/62'
-            "
-            @click="$emit('selectGroup', group.id)"
-          >
-            {{ group.name }}
-            <span class="ml-2 text-white/42">{{ group.channel_count }}</span>
-          </button>
         </div>
       </div>
     </div>

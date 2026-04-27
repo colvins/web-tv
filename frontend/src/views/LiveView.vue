@@ -17,8 +17,6 @@ import {
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 
-type PlaybackStatusFilter = 'all' | 'playing' | 'failed' | 'unknown'
-
 const LIVE_SOURCE_STORAGE_KEY = 'webtv.live.selectedSourceConfigId'
 
 const message = useMessage()
@@ -28,7 +26,6 @@ const channels = ref<LiveChannel[]>([])
 const selectedSourceId = ref<string | null>(null)
 const selectedGroupId = ref<string | null>(null)
 const query = ref('')
-const playbackStatusFilter = ref<PlaybackStatusFilter>('all')
 const loading = ref(false)
 const sourceLoading = ref(false)
 const loadError = ref<string | null>(null)
@@ -47,7 +44,7 @@ const selectedSource = computed(
 )
 const selectedSourceHasLiveData = computed(() => (selectedSource.value?.live_channel_count ?? 0) > 0)
 const sourceOptions = computed(() =>
-  enabledSources.value.map((source) => {
+  compatibleSources.value.map((source) => {
     const format = source.latest_detected_format ?? source.source_type.toUpperCase()
     const liveCount = source.live_channel_count
     const status = source.latest_import_status ? source.latest_import_status.toUpperCase() : 'NEW'
@@ -55,15 +52,6 @@ const sourceOptions = computed(() =>
       label: `${source.name} · ${format} · Live ${liveCount} · ${status}`,
       value: source.id,
     }
-  }),
-)
-const selectedGroupName = computed(
-  () => groups.value.find((group) => group.id === selectedGroupId.value)?.name ?? 'All Channels',
-)
-const filteredChannels = computed(() =>
-  channels.value.filter((channel) => {
-    if (playbackStatusFilter.value === 'all') return true
-    return (channelPlaybackStatuses.value[channel.id] ?? 'unknown') === playbackStatusFilter.value
   }),
 )
 const emptyStateTitle = computed(() => {
@@ -162,7 +150,7 @@ async function bootstrap() {
     const sourceList = await listSourceConfigs()
     sources.value = sourceList
 
-    const enabledIds = new Set(sourceList.filter((source) => source.enabled).map((source) => source.id))
+    const enabledIds = new Set(compatibleSources.value.map((source) => source.id))
     const currentSelection = selectedSourceId.value
     const savedSelection = restoreSavedSourceId()
     const preferredSourceId =
@@ -212,10 +200,6 @@ async function toggleChannel(channel: LiveChannel, enabled: boolean) {
 
 function selectGroup(groupId: string | null) {
   selectedGroupId.value = groupId
-}
-
-function selectPlaybackStatusFilter(filter: PlaybackStatusFilter) {
-  playbackStatusFilter.value = filter
 }
 
 function markChannelPlaybackStatus(channelId: string | null, status: Exclude<ChannelPlaybackStatus, 'unknown'>) {
@@ -289,9 +273,7 @@ onBeforeUnmount(() => {
           <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">
             {{ selectedSource?.name ?? 'Choose a live source' }}
           </h2>
-          <p class="mt-3 max-w-3xl text-sm leading-6 text-white/58">
-            Live groups and channels now bind to the selected imported source package only.
-          </p>
+          <p class="mt-3 max-w-3xl text-sm leading-6 text-white/58">Select a live source to browse its channel list.</p>
         </div>
         <div class="flex flex-col gap-3 sm:min-w-[22rem]">
           <NSelect
@@ -329,17 +311,14 @@ onBeforeUnmount(() => {
         v-if="isDesktopLayout"
         v-model:query="query"
         :groups="groups"
-        :channels="filteredChannels"
+        :channels="channels"
         :selected-group-id="selectedGroupId"
-        :selected-group-name="selectedGroupName"
-        :selected-playback-status-filter="playbackStatusFilter"
         :loading="loading"
         :toggling-ids="togglingIds"
         :playback="playback"
         :channel-playback-statuses="channelPlaybackStatuses"
         @refresh="loadLiveData"
         @select-group="selectGroup"
-        @select-playback-status-filter="selectPlaybackStatusFilter"
         @select-channel="selectChannel"
         @toggle-channel="toggleChannel"
       />
@@ -347,17 +326,14 @@ onBeforeUnmount(() => {
         v-else
         v-model:query="query"
         :groups="groups"
-        :channels="filteredChannels"
+        :channels="channels"
         :selected-group-id="selectedGroupId"
-        :selected-group-name="selectedGroupName"
-        :selected-playback-status-filter="playbackStatusFilter"
         :loading="loading"
         :toggling-ids="togglingIds"
         :playback="playback"
         :channel-playback-statuses="channelPlaybackStatuses"
         @refresh="loadLiveData"
         @select-group="selectGroup"
-        @select-playback-status-filter="selectPlaybackStatusFilter"
         @select-channel="selectChannel"
         @toggle-channel="toggleChannel"
       />
