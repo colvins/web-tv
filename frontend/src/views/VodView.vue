@@ -1,33 +1,34 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RefreshCw, Settings } from 'lucide-vue-next'
-import { NButton, useMessage } from 'naive-ui'
-import { RouterLink } from 'vue-router'
+import { NButton } from 'naive-ui'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import {
   getVodCategories,
-  getVodDetail,
-  getVodEpisodePlay,
   getVodList,
   listSourceConfigs,
   searchVod,
   type SourceConfig,
   type VodBrowseCategoriesResponse,
-  type VodBrowseDetailResponse,
   type VodBrowseItem,
   type VodBrowsePageResponse,
-  type VodEpisodePlayResponse,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
-import { useVodPlayback } from '@/composables/useVodPlayback'
 import VodCatalogGrid from '@/components/vod/VodCatalogGrid.vue'
 import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
-import VodDetailPanel from '@/components/vod/VodDetailPanel.vue'
 import VodSourceSelector from '@/components/vod/VodSourceSelector.vue'
+import {
+  buildVodCatalogQuery,
+  getVodCatalogRouteKey,
+  parseVodCatalogRouteState,
+  type VodCatalogRouteState,
+} from '@/utils/vodRouteState'
 
 const VOD_SOURCE_STORAGE_KEY = 'webtv.vod.selectedSourceConfigId'
 
-const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const sources = ref<SourceConfig[]>([])
 const selectedSourceId = ref<string | null>(null)
 const categoriesResponse = ref<VodBrowseCategoriesResponse | null>(null)
@@ -40,12 +41,8 @@ const loadError = ref<string | null>(null)
 const selectedCategoryId = ref<string | null>(null)
 const searchQuery = ref('')
 const submittedQuery = ref('')
-const detail = ref<VodBrowseDetailResponse | null>(null)
-const detailLoading = ref(false)
-const detailError = ref<string | null>(null)
-const episodeLoadingKey = ref<string | null>(null)
-const episodeError = ref<string | null>(null)
-const playback = useVodPlayback()
+const bootstrapped = ref(false)
+const lastLoadedRouteKey = ref<string | null>(null)
 
 const sourceOptions = computed(() =>
   sources.value
@@ -66,7 +63,6 @@ const pageLabel = computed(() => `${pageResponse.value?.page ?? 1} / ${pageRespo
 const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
-const detailTitle = computed(() => detail.value?.name ?? 'Title detail')
 const enabledSources = computed(() => sources.value.filter((source) => source.enabled))
 
 function restoreSavedSourceId() {
@@ -84,25 +80,53 @@ function persistSelectedSourceId(sourceId: string | null) {
 function resetVodState() {
   categoriesResponse.value = null
   pageResponse.value = null
-  detail.value = null
-  detailError.value = null
-  episodeError.value = null
-  episodeLoadingKey.value = null
   selectedCategoryId.value = null
   submittedQuery.value = ''
   searchQuery.value = ''
-  playback.destroyPlayer()
+  lastLoadedRouteKey.value = null
 }
 
-async function fetchSourceCatalog(sourceId: string) {
+function buildCatalogRouteState(overrides: Partial<VodCatalogRouteState> = {}): VodCatalogRouteState {
+  return {
+    sourceId: overrides.sourceId ?? selectedSourceId.value,
+    categoryId: overrides.categoryId ?? selectedCategoryId.value,
+    query: overrides.query ?? submittedQuery.value,
+    page: overrides.page ?? pageResponse.value?.page ?? 1,
+  }
+}
+
+async function fetchSourceCatalog(sourceId: string, routeState: VodCatalogRouteState) {
   const [categories, page] = await Promise.all([
     getVodCategories(sourceId),
-    getVodList({
-      source_config_id: sourceId,
-      page: 1,
-    }),
+    routeState.query
+      ? searchVod({
+          source_config_id: sourceId,
+          q: routeState.query,
+          page: routeState.page,
+        })
+      : getVodList({
+          source_config_id: sourceId,
+          type_id: routeState.categoryId,
+          page: routeState.page,
+        }),
   ])
   return { categories, page }
+}
+
+function applyCatalogState(
+  sourceId: string,
+  routeState: VodCatalogRouteState,
+  catalog: { categories: VodBrowseCategoriesResponse; page: VodBrowsePageResponse },
+) {
+  selectedSourceId.value = sourceId
+  persistSelectedSourceId(sourceId)
+  categoriesResponse.value = catalog.categories
+  pageResponse.value = catalog.page
+  selectedCategoryId.value = routeState.categoryId
+  searchQuery.value = routeState.query
+  submittedQuery.value = routeState.query
+  noUsableSource.value = false
+  lastLoadedRouteKey.value = getVodCatalogRouteKey({ ...routeState, sourceId })
 }
 
 async function bootstrap() {
@@ -112,24 +136,30 @@ async function bootstrap() {
     const sourceList = await listSourceConfigs()
     sources.value = sourceList
 
+    const routeState = parseVodCatalogRouteState(route.query)
     const enabledIds = new Set(sourceList.filter((source) => source.enabled).map((source) => source.id))
     const currentSelection = selectedSourceId.value
     const savedSelection = restoreSavedSourceId()
+    const candidateIds = [
+      routeState.sourceId && enabledIds.has(routeState.sourceId) ? routeState.sourceId : null,
+      currentSelection && enabledIds.has(currentSelection) ? currentSelection : null,
+      savedSelection && enabledIds.has(savedSelection) ? savedSelection : null,
+      ...enabledSources.value.map((source) => source.id),
+    ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
 
-    const preferredSourceId =
-      (currentSelection && enabledIds.has(currentSelection) ? currentSelection : null) ??
-      (savedSelection && enabledIds.has(savedSelection) ? savedSelection : null)
-
-    if (preferredSourceId) {
-      await loadSource(preferredSourceId, { quiet: true, preserveSelectionOnFailure: true })
-      return
-    }
-
-    const candidateIds = enabledSources.value.map((source) => source.id)
     for (const sourceId of candidateIds) {
-      const success = await loadSource(sourceId, { quiet: true })
-      if (success) {
+      try {
+        const catalog = await fetchSourceCatalog(sourceId, routeState)
+        applyCatalogState(sourceId, routeState, catalog)
+        if (routeState.sourceId !== sourceId) {
+          await router.replace({
+            name: 'vod',
+            query: buildVodCatalogQuery({ ...routeState, sourceId }),
+          })
+        }
         return
+      } catch {
+        continue
       }
     }
 
@@ -141,49 +171,32 @@ async function bootstrap() {
     loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD sources'
   } finally {
     loading.value = false
+    bootstrapped.value = true
   }
 }
 
-async function loadSource(
-  sourceId: string,
-  options: { quiet?: boolean; preserveSelectionOnFailure?: boolean } = {},
-) {
+async function syncCatalogFromRoute() {
+  const routeState = parseVodCatalogRouteState(route.query)
+
+  if (!routeState.sourceId) {
+    selectedSourceId.value = null
+    persistSelectedSourceId(null)
+    resetVodState()
+    noUsableSource.value = false
+    return
+  }
+
+  const routeKey = getVodCatalogRouteKey(routeState)
+  if (lastLoadedRouteKey.value === routeKey && pageResponse.value) {
+    return
+  }
+
   sourceLoading.value = true
   loadError.value = null
   noUsableSource.value = false
   try {
-    const catalog = await fetchSourceCatalog(sourceId)
-    selectedSourceId.value = sourceId
-    persistSelectedSourceId(sourceId)
-    resetVodState()
-    categoriesResponse.value = catalog.categories
-    pageResponse.value = catalog.page
-    return true
-  } catch (error) {
-    if (options.preserveSelectionOnFailure) {
-      selectedSourceId.value = sourceId
-      persistSelectedSourceId(sourceId)
-    }
-    resetVodState()
-    if (!options.quiet) {
-      loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD categories'
-    }
-    return false
-  } finally {
-    sourceLoading.value = false
-  }
-}
-
-async function loadListPage(page: number, sourceId = selectedSourceId.value) {
-  if (!sourceId) return
-  sourceLoading.value = true
-  loadError.value = null
-  try {
-    pageResponse.value = await getVodList({
-      source_config_id: sourceId,
-      type_id: selectedCategoryId.value,
-      page,
-    })
+    const catalog = await fetchSourceCatalog(routeState.sourceId, routeState)
+    applyCatalogState(routeState.sourceId, routeState, catalog)
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD titles'
   } finally {
@@ -195,104 +208,93 @@ async function runSearch(page = 1) {
   if (!selectedSourceId.value) return
   const query = searchQuery.value.trim()
   if (!query) {
-    submittedQuery.value = ''
-    await loadListPage(1)
+    await router.replace({
+      name: 'vod',
+      query: buildVodCatalogQuery({
+        sourceId: selectedSourceId.value,
+        categoryId: selectedCategoryId.value,
+        query: '',
+        page: 1,
+      }),
+    })
     return
   }
 
   searchLoading.value = true
-  loadError.value = null
-  try {
-    submittedQuery.value = query
-    pageResponse.value = await searchVod({
-      source_config_id: selectedSourceId.value,
-      q: query,
+  await router.replace({
+    name: 'vod',
+    query: buildVodCatalogQuery({
+      sourceId: selectedSourceId.value,
+      categoryId: null,
+      query,
       page,
-    })
-  } catch (error) {
-    loadError.value = error instanceof ApiError ? error.message : 'Unable to search VOD titles'
-  } finally {
-    searchLoading.value = false
-  }
+    }),
+  })
+  searchLoading.value = false
 }
 
 async function selectCategory(categoryId: string | null) {
-  detail.value = null
-  detailError.value = null
-  episodeError.value = null
-  playback.destroyPlayer()
-  selectedCategoryId.value = categoryId
-  submittedQuery.value = ''
-  searchQuery.value = ''
-  await loadListPage(1)
+  if (!selectedSourceId.value) return
+  await router.replace({
+    name: 'vod',
+    query: buildVodCatalogQuery({
+      sourceId: selectedSourceId.value,
+      categoryId,
+      query: '',
+      page: 1,
+    }),
+  })
 }
 
 async function openDetail(item: VodBrowseItem) {
   if (!selectedSourceId.value || item.vod_id === null || item.vod_id === undefined) return
-  detailLoading.value = true
-  detailError.value = null
-  episodeError.value = null
-  playback.destroyPlayer()
-  try {
-    detail.value = await getVodDetail({
-      source_config_id: selectedSourceId.value,
-      vod_id: item.vod_id,
-    })
-  } catch (error) {
-    detailError.value = error instanceof ApiError ? error.message : 'Unable to load VOD detail'
-    message.error(detailError.value)
-  } finally {
-    detailLoading.value = false
-  }
-}
-
-function closeDetail() {
-  detail.value = null
-  detailError.value = null
-  episodeError.value = null
-  playback.destroyPlayer()
-}
-
-async function playEpisode(groupSourceName: string, episodeIndex: number) {
-  if (!selectedSourceId.value || !detail.value?.vod_id) return
-  const key = `${groupSourceName}:${episodeIndex}`
-  episodeLoadingKey.value = key
-  episodeError.value = null
-  try {
-    const episode: VodEpisodePlayResponse = await getVodEpisodePlay({
-      source_config_id: selectedSourceId.value,
-      vod_id: detail.value.vod_id,
-      source_name: groupSourceName,
-      episode_index: episodeIndex,
-    })
-    await playback.loadEpisode(episode)
-  } catch (error) {
-    episodeError.value = error instanceof ApiError ? error.message : 'Unable to load episode playback metadata'
-    message.error(episodeError.value)
-  } finally {
-    episodeLoadingKey.value = null
-  }
+  await router.push({
+    name: 'vod-detail',
+    params: {
+      sourceConfigId: selectedSourceId.value,
+      vodId: String(item.vod_id),
+    },
+    query: buildVodCatalogQuery(buildCatalogRouteState()),
+  })
 }
 
 async function changePage(direction: -1 | 1) {
-  if (!pageResponse.value) return
+  if (!pageResponse.value || !selectedSourceId.value) return
   const nextPage = pageResponse.value.page + direction
-  if (isSearchMode.value) {
-    await runSearch(nextPage)
-    return
-  }
-  await loadListPage(nextPage)
+  await router.replace({
+    name: 'vod',
+    query: buildVodCatalogQuery({
+      sourceId: selectedSourceId.value,
+      categoryId: isSearchMode.value ? null : selectedCategoryId.value,
+      query: submittedQuery.value,
+      page: nextPage,
+    }),
+  })
 }
 
 function onSourceChange(value: string | null) {
   if (!value) {
-    selectedSourceId.value = null
-    persistSelectedSourceId(null)
-    resetVodState()
+    void router.replace({ name: 'vod', query: {} })
     return
   }
-  void loadSource(value, { preserveSelectionOnFailure: true })
+  void router.replace({
+    name: 'vod',
+    query: buildVodCatalogQuery({
+      sourceId: value,
+      categoryId: null,
+      query: '',
+      page: 1,
+    }),
+  })
 }
+
+watch(
+  () => route.query,
+  () => {
+    if (!bootstrapped.value) return
+    void syncCatalogFromRoute()
+  },
+)
 
 onMounted(bootstrap)
 </script>
@@ -429,17 +431,5 @@ onMounted(bootstrap)
         </div>
       </div>
     </article>
-
-    <VodDetailPanel
-      :detail="detail"
-      :detail-title="detailTitle"
-      :detail-loading="detailLoading"
-      :detail-error="detailError"
-      :episode-loading-key="episodeLoadingKey"
-      :episode-error="episodeError"
-      :playback="playback"
-      @close="closeDetail"
-      @play-episode="playEpisode"
-    />
   </section>
 </template>

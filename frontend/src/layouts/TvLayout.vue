@@ -31,6 +31,13 @@ const navItems: NavItem[] = [
 ]
 
 const pageTitle = computed(() => String(route.meta.title ?? 'web-tv'))
+
+function isNavItemActive(path: string) {
+  if (path === '/') {
+    return route.path === '/'
+  }
+  return route.path === path || route.path.startsWith(`${path}/`)
+}
 </script>
 
 <template>
@@ -54,7 +61,7 @@ const pageTitle = computed(() => String(route.meta.title ?? 'web-tv'))
           :key="item.path"
           :to="item.path"
           class="tv-focus-card flex h-14 items-center justify-center rounded-3xl border border-transparent text-white/72 xl:justify-start xl:px-5"
-          :class="{ 'bg-white/16 text-white shadow-glow': route.path === item.path }"
+          :class="{ 'bg-white/16 text-white shadow-glow': isNavItemActive(item.path) }"
         >
           <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
           <span class="ml-4 hidden font-medium xl:inline">{{ item.label }}</span>
@@ -90,7 +97,7 @@ const pageTitle = computed(() => String(route.meta.title ?? 'web-tv'))
         :key="item.path"
         :to="item.path"
         class="tv-focus-card flex min-h-14 flex-col items-center justify-center rounded-3xl text-white/68"
-        :class="{ 'bg-white/16 text-white': route.path === item.path }"
+        :class="{ 'bg-white/16 text-white': isNavItemActive(item.path) }"
       >
         <component :is="item.icon" class="h-5 w-5" aria-hidden="true" />
         <span class="mt-1 hidden text-[0.68rem] font-medium sm:block">{{ item.label }}</span>

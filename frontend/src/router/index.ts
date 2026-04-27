@@ -7,12 +7,19 @@ import LiveView from '@/views/LiveView.vue'
 import SearchView from '@/views/SearchView.vue'
 import SettingsSourcesView from '@/views/SettingsSourcesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import VodDetailView from '@/views/VodDetailView.vue'
 import VodView from '@/views/VodView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView, meta: { title: 'Watch Now' } },
   { path: '/live', name: 'live', component: LiveView, meta: { title: 'Live TV' } },
   { path: '/vod', name: 'vod', component: VodView, meta: { title: 'VOD' } },
+  {
+    path: '/vod/:sourceConfigId/:vodId',
+    name: 'vod-detail',
+    component: VodDetailView,
+    meta: { title: 'VOD Detail' },
+  },
   { path: '/search', name: 'search', component: SearchView, meta: { title: 'Search' } },
   { path: '/favorites', name: 'favorites', component: FavoritesView, meta: { title: 'Favorites' } },
   { path: '/history', name: 'history', component: HistoryView, meta: { title: 'History' } },

@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { Film } from 'lucide-vue-next'
-
 import type { VodBrowseItem } from '@/api/sourceConfigs'
+import VodPoster from './VodPoster.vue'
 
 defineProps<{
   items: VodBrowseItem[]
@@ -29,17 +28,13 @@ const emit = defineEmits<{
       class="tv-focus-card glass-panel overflow-hidden rounded-[2rem] p-4"
     >
       <button type="button" class="block w-full text-left" @click="emit('selectItem', item)">
-        <div class="relative overflow-hidden rounded-[1.5rem] bg-white/6">
-          <img
-            v-if="item.poster"
+        <div class="relative rounded-[1.5rem]">
+          <VodPoster
             :src="item.poster"
             :alt="item.name"
-            class="aspect-[3/4] w-full object-cover"
-            loading="lazy"
+            class="rounded-[1.5rem]"
+            image-class="aspect-[3/4] w-full object-cover"
           />
-          <div v-else class="flex aspect-[3/4] items-center justify-center text-white/30">
-            <Film class="h-12 w-12" />
-          </div>
           <div
             v-if="item.remarks"
             class="absolute left-3 top-3 rounded-full border border-black/10 bg-black/55 px-3 py-1 text-xs text-white"
