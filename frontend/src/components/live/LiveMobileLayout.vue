@@ -5,7 +5,7 @@ import { NButton, NInput } from 'naive-ui'
 
 import LiveChannelCard from '@/components/live/LiveChannelCard.vue'
 import LivePlayer from '@/components/live/LivePlayer.vue'
-import type { LivePlayback } from '@/composables/useLivePlayback'
+import type { ChannelPlaybackStatus, LivePlayback } from '@/composables/useLivePlayback'
 import type { LiveChannel, LiveChannelGroup } from '@/api/sourceConfigs'
 
 const props = defineProps<{
@@ -17,6 +17,7 @@ const props = defineProps<{
   loading: boolean
   togglingIds: Set<string>
   playback: LivePlayback
+  channelPlaybackStatuses: Record<string, ChannelPlaybackStatus>
 }>()
 
 const emit = defineEmits<{
@@ -115,6 +116,7 @@ const queryModel = computed({
           :channel="channel"
           :selected="playback.selectedChannelId.value === channel.id"
           :toggling="togglingIds.has(channel.id)"
+          :playback-status="channelPlaybackStatuses[channel.id] ?? 'unknown'"
           @select="$emit('selectChannel', $event)"
           @toggle="(channel, enabled) => $emit('toggleChannel', channel, enabled)"
         />

@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { LiveChannel } from '@/api/sourceConfigs'
 
 export type PlaybackState = 'idle' | 'loading' | 'ready' | 'error'
+export type ChannelPlaybackStatus = 'unknown' | 'playing' | 'failed'
 export type PlaybackErrorCategory =
   | 'autoplay_blocked'
   | 'unsupported_format'

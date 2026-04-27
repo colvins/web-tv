@@ -4,7 +4,7 @@ import { useMessage } from 'naive-ui'
 
 import LiveDesktopLayout from '@/components/live/LiveDesktopLayout.vue'
 import LiveMobileLayout from '@/components/live/LiveMobileLayout.vue'
-import { useLivePlayback } from '@/composables/useLivePlayback'
+import { useLivePlayback, type ChannelPlaybackStatus } from '@/composables/useLivePlayback'
 import {
   listLiveChannels,
   listLiveGroups,
@@ -22,6 +22,7 @@ const query = ref('')
 const loading = ref(false)
 const togglingIds = ref<Set<string>>(new Set())
 const isDesktopLayout = ref(true)
+const channelPlaybackStatuses = ref<Record<string, ChannelPlaybackStatus>>({})
 const playback = useLivePlayback()
 
 let searchTimer: number | undefined
@@ -83,12 +84,36 @@ function selectGroup(groupId: string | null) {
   selectedGroupId.value = groupId
 }
 
+function markChannelPlaybackStatus(channelId: string | null, status: Exclude<ChannelPlaybackStatus, 'unknown'>) {
+  if (!channelId) return
+
+  channelPlaybackStatuses.value = {
+    ...channelPlaybackStatuses.value,
+    [channelId]: status,
+  }
+}
+
 watch(query, () => {
   window.clearTimeout(searchTimer)
   searchTimer = window.setTimeout(loadLiveData, 250)
 })
 
 watch(selectedGroupId, loadLiveData)
+
+watch(
+  [playback.selectedChannelId, playback.playbackState],
+  ([channelId, playbackState]) => {
+    if (playbackState === 'ready') {
+      markChannelPlaybackStatus(channelId, 'playing')
+      return
+    }
+
+    if (playbackState === 'error') {
+      markChannelPlaybackStatus(channelId, 'failed')
+    }
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
   mediaQuery = window.matchMedia('(min-width: 768px)')
@@ -114,6 +139,7 @@ onBeforeUnmount(() => {
     :loading="loading"
     :toggling-ids="togglingIds"
     :playback="playback"
+    :channel-playback-statuses="channelPlaybackStatuses"
     @refresh="loadLiveData"
     @select-group="selectGroup"
     @select-channel="selectChannel"
@@ -129,6 +155,7 @@ onBeforeUnmount(() => {
     :loading="loading"
     :toggling-ids="togglingIds"
     :playback="playback"
+    :channel-playback-statuses="channelPlaybackStatuses"
     @refresh="loadLiveData"
     @select-group="selectGroup"
     @select-channel="selectChannel"
