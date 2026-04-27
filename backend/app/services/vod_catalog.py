@@ -20,6 +20,8 @@ from app.services.vod_categories import list_categories_for_source
 
 REQUEST_TIMEOUT_SECONDS = 10
 HTML_TAG_RE = re.compile(r"<[^>]+>")
+POSTER_BACKFILL_BATCH_SIZE = 30
+POSTER_BACKFILL_MAX_IDS_CHARS = 1500
 
 
 @dataclass(frozen=True)
@@ -552,16 +554,46 @@ async def _fill_missing_posters(candidate: CollectorSiteCandidate, payload: dict
     if not missing_ids:
         return payload
 
-    detail_payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": ",".join(missing_ids)}))
-    detail_items = detail_payload.get("list")
-    if not isinstance(detail_items, list):
-        return payload
+    posters_by_id: dict[str, str | None] = {}
+    batches: list[list[str]] = []
+    current_batch: list[str] = []
+    current_chars = 0
 
-    posters_by_id = {
-        str(item.get("vod_id")): _normalize_media_url(item.get("vod_pic"), candidate.api_url)
-        for item in detail_items
-        if isinstance(item, dict) and item.get("vod_id") not in (None, "")
-    }
+    for vod_id in missing_ids:
+        next_chars = current_chars + len(vod_id) + (1 if current_batch else 0)
+        if current_batch and (
+            len(current_batch) >= POSTER_BACKFILL_BATCH_SIZE or next_chars > POSTER_BACKFILL_MAX_IDS_CHARS
+        ):
+            batches.append(current_batch)
+            current_batch = []
+            current_chars = 0
+
+        current_batch.append(vod_id)
+        current_chars += len(vod_id) + (1 if len(current_batch) > 1 else 0)
+
+    if current_batch:
+        batches.append(current_batch)
+
+    for batch in batches:
+        try:
+            detail_payload = await _fetch_json(
+                _build_url(candidate.api_url, {"ac": "detail", "ids": ",".join(batch)})
+            )
+        except HTTPException:
+            continue
+
+        detail_items = detail_payload.get("list")
+        if not isinstance(detail_items, list):
+            continue
+
+        posters_by_id.update(
+            {
+                str(item.get("vod_id")): _normalize_media_url(item.get("vod_pic"), candidate.api_url)
+                for item in detail_items
+                if isinstance(item, dict) and item.get("vod_id") not in (None, "")
+            }
+        )
+
     for item in items:
         if not isinstance(item, dict):
             continue
