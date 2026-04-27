@@ -1,12 +1,15 @@
 import base64
 import binascii
 import json
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
+
 CATVOD_KEYS = {"sites", "lives", "parses", "flags", "spider", "wallpaper", "logo", "rules", "hosts"}
 BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\s_-]{24,}$")
 BASE64_BLOCK_RE = re.compile(rb"[A-Za-z0-9+/=_-]{80,}")
+SAFE_KEY_RE = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -23,7 +26,7 @@ class RecoveryResult:
     note: str
 
 
-def detect_source_content(content: bytes) -> DetectionResult:
+def detect_source_content(content: bytes, source_url: str | None = None) -> DetectionResult:
     text = _decode_text(content)
     stripped = text.lstrip("\ufeff\r\n\t ")
 
@@ -33,7 +36,7 @@ def detect_source_content(content: bytes) -> DetectionResult:
     recovery = recover_root_config(content)
     if recovery is not None:
         if recovery.source_format == "plain_json":
-            return _json_detection(recovery.recovered_value)
+            return _json_detection(recovery.recovered_value, source_url=source_url)
         if recovery.source_format == "base64_json":
             return DetectionResult("base64_json", 0.92, recovery.note)
         return DetectionResult("binary_wrapped", 0.93, recovery.note)
@@ -83,6 +86,62 @@ def recover_root_config(content: bytes) -> RecoveryResult | None:
     return None
 
 
+def looks_like_direct_maccms_collector_url(url: str | None) -> bool:
+    if not url:
+        return False
+    lowered = url.lower()
+    return (
+        "api_mac10.php" in lowered
+        or "api.php/provide/vod" in lowered
+        or "provide/vod" in lowered
+    )
+
+
+def looks_like_maccms_collector_payload(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+
+    categories = value.get("class")
+    if isinstance(categories, list) and any(_looks_like_category_entry(item) for item in categories):
+        return True
+
+    items = value.get("list")
+    if isinstance(items, list) and any(_looks_like_vod_entry(item) for item in items):
+        return True
+
+    return False
+
+
+def build_direct_collector_root_config(
+    *,
+    source_name: str,
+    source_url: str,
+    category_samples: list[str] | None = None,
+) -> dict[str, Any]:
+    site_entry: dict[str, Any] = {
+        "key": build_safe_site_key(source_name, source_url),
+        "name": source_name,
+        "type": 1,
+        "api": source_url,
+        "searchable": 1,
+        "changeable": 0,
+        "quickSearch": 1,
+        "filterable": 0,
+    }
+    if category_samples:
+        site_entry["categories_hint"] = category_samples
+    return {"sites": [site_entry]}
+
+
+def build_safe_site_key(source_name: str, source_url: str) -> str:
+    slug_source = source_name.strip().lower() or source_url.strip().lower()
+    slug = SAFE_KEY_RE.sub("-", slug_source).strip("-")
+    if not slug:
+        slug = "collector"
+    digest = hashlib.sha1(source_url.encode("utf-8")).hexdigest()[:8]
+    return f"{slug[:32]}-{digest}"
+
+
 def _decode_text(content: bytes) -> str:
     return content.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")
 
@@ -107,11 +166,20 @@ def _parse_json_like(text: str) -> Any | None:
     return None
 
 
-def _json_detection(value: Any) -> DetectionResult:
+def _json_detection(value: Any, source_url: str | None = None) -> DetectionResult:
+    if looks_like_direct_maccms_collector_url(source_url) and looks_like_maccms_collector_payload(value):
+        return DetectionResult(
+            "plain_json",
+            0.98,
+            "Direct MacCMS-style VOD collector metadata detected from URL pattern and JSON payload.",
+        )
+
     keys = _collect_top_level_keys(value)
     matched = sorted(keys & CATVOD_KEYS)
     if matched:
         return DetectionResult("catvod_json", 0.96, f"JSON contains CatVod/FongMi keys: {', '.join(matched[:5])}.")
+    if looks_like_maccms_collector_payload(value):
+        return DetectionResult("plain_json", 0.94, "JSON payload matches a direct MacCMS-style VOD collector response.")
     return DetectionResult("plain_json", 0.9, "Content is valid JSON.")
 
 
@@ -190,3 +258,13 @@ def _strip_js_line_comments(text: str) -> str:
         i += 1
 
     return "".join(output)
+
+
+def _looks_like_category_entry(value: Any) -> bool:
+    return isinstance(value, dict) and ("type_id" in value or "type_name" in value)
+
+
+def _looks_like_vod_entry(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return any(key in value for key in ("vod_id", "vod_name", "type_id", "type_name"))

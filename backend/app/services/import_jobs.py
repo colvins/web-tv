@@ -1,6 +1,9 @@
 import hashlib
+import json
 import uuid
 from datetime import UTC, datetime
+from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, status
@@ -8,9 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ImportJob
-from app.services.source_detection import detect_source_content
+from app.services.source_detection import (
+    build_direct_collector_root_config,
+    detect_source_content,
+    looks_like_direct_maccms_collector_url,
+    looks_like_maccms_collector_payload,
+    recover_json_config,
+)
 from app.services.source_configs import get_source_config
-from app.services.source_snapshots import store_source_snapshot
+from app.services.source_snapshots import store_source_snapshot_with_overrides
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 RAW_PREVIEW_CHARS = 2000
@@ -52,7 +61,7 @@ async def import_source_config(db: AsyncSession, source_config_id: uuid.UUID) ->
     await db.commit()
 
     try:
-        result = await _download_source(source_config.url)
+        result = await _download_source(source_config.name, source_config.url)
     except Exception as exc:
         finished_at = datetime.now(UTC)
         message = str(exc)
@@ -75,16 +84,37 @@ async def import_source_config(db: AsyncSession, source_config_id: uuid.UUID) ->
     job.detection_confidence = result["detection_confidence"]
     job.detection_note = result["detection_note"]
     job.finished_at = finished_at
+    source_config.source_type = _detected_source_type(result["detected_format"])
     source_config.last_import_at = finished_at
     source_config.last_success_at = finished_at
     source_config.last_error = None
-    await store_source_snapshot(db, job, result["content"])
+    await store_source_snapshot_with_overrides(
+        db,
+        job,
+        result["content"],
+        root_config_override=result["root_config_override"],
+        recovered_format_override=result["recovered_format_override"],
+        extra_warnings=result["snapshot_warnings"],
+    )
+    snapshot_root_config = result["root_config_override"]
+    if snapshot_root_config is None:
+        recovered = recover_json_config(result["content"])
+        snapshot_root_config = recovered if isinstance(recovered, dict) else None
+    if isinstance(snapshot_root_config, dict):
+        from app.services.vod_sites import sync_sites_from_root_config
+
+        await sync_sites_from_root_config(
+            db,
+            source_config_id=source_config.id,
+            import_job_id=job.id,
+            root_config=snapshot_root_config,
+        )
     await db.commit()
     await db.refresh(job)
     return job
 
 
-async def _download_source(url: str) -> dict[str, str | int | float | bytes | None]:
+async def _download_source(source_name: str, url: str) -> dict[str, str | int | float | bytes | list[str] | dict[str, Any] | None]:
     hasher = hashlib.sha256()
     chunks: list[bytes] = []
     total = 0
@@ -108,7 +138,19 @@ async def _download_source(url: str) -> dict[str, str | int | float | bytes | No
 
     raw = b"".join(chunks)
     raw_preview = raw.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")[:RAW_PREVIEW_CHARS]
-    detection = detect_source_content(raw)
+    detection = detect_source_content(raw, source_url=url)
+    root_config_override: dict[str, Any] | None = None
+    recovered_format_override: str | None = None
+    snapshot_warnings: list[str] = []
+    detection_note = detection.detection_note
+
+    collector_probe = await _probe_direct_collector(source_name, url, raw)
+    if collector_probe is not None:
+        root_config_override = collector_probe["root_config"]
+        recovered_format_override = "direct_maccms_collector"
+        detection_note = collector_probe["detection_note"]
+        snapshot_warnings.append("Direct MacCMS-style collector URL was normalized into a synthetic sites[] root_config.")
+
     return {
         "content_type": content_type,
         "content_length": total,
@@ -116,6 +158,96 @@ async def _download_source(url: str) -> dict[str, str | int | float | bytes | No
         "raw_preview": raw_preview,
         "detected_format": detection.detected_format,
         "detection_confidence": detection.detection_confidence,
-        "detection_note": detection.detection_note,
+        "detection_note": detection_note,
         "content": raw,
+        "root_config_override": root_config_override,
+        "recovered_format_override": recovered_format_override,
+        "snapshot_warnings": snapshot_warnings,
     }
+
+
+async def _probe_direct_collector(
+    source_name: str,
+    source_url: str,
+    raw_content: bytes,
+) -> dict[str, Any] | None:
+    payload = _parse_json_like(raw_content)
+    if not looks_like_direct_maccms_collector_url(source_url) and not looks_like_maccms_collector_payload(payload):
+        return None
+
+    metadata = await _fetch_metadata_json(_build_metadata_url(source_url, {"ac": "list", "pg": 1}))
+    if not looks_like_maccms_collector_payload(metadata):
+        raise ValueError("URL matches a VOD collector pattern, but ac=list did not return MacCMS-style metadata.")
+
+    category_samples = _category_samples(metadata)
+    root_config = build_direct_collector_root_config(
+        source_name=source_name,
+        source_url=source_url,
+        category_samples=category_samples,
+    )
+    note = "Direct MacCMS-style VOD collector detected and validated with ac=list metadata only."
+    if category_samples:
+        note = f"{note} Sample categories: {', '.join(category_samples[:5])}."
+    return {
+        "root_config": root_config,
+        "detection_note": note,
+    }
+
+
+async def _fetch_metadata_json(url: str) -> dict[str, Any]:
+    timeout = httpx.Timeout(REQUEST_TIMEOUT_SECONDS)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+        response = await client.get(url, headers=IMPORT_HEADERS)
+        response.raise_for_status()
+
+    payload = _parse_json_like(response.content)
+    if not isinstance(payload, dict):
+        raise ValueError("Metadata probe did not return a JSON object.")
+    return payload
+
+
+def _parse_json_like(content: bytes) -> Any | None:
+    text = content.decode("utf-8", errors="replace").replace("\x00", "\uFFFD").lstrip("\ufeff\r\n\t ")
+    if not text.startswith(("{", "[")):
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _build_metadata_url(url: str, updates: dict[str, str | int | None]) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in updates.items():
+        if value is None:
+            query.pop(key, None)
+        else:
+            query[key] = str(value)
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+
+
+def _category_samples(payload: dict[str, Any]) -> list[str]:
+    categories = payload.get("class")
+    if not isinstance(categories, list):
+        return []
+
+    samples: list[str] = []
+    for item in categories[:8]:
+        if not isinstance(item, dict):
+            continue
+        type_name = item.get("type_name")
+        if type_name is None:
+            continue
+        text = str(type_name).strip()
+        if text:
+            samples.append(text)
+    return samples
+
+
+def _detected_source_type(detected_format: str | None) -> str:
+    if detected_format in {"m3u"}:
+        return "m3u"
+    if detected_format == "txt":
+        return "txt"
+    return "json"

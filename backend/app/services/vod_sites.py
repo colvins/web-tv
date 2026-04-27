@@ -86,31 +86,16 @@ async def extract_sites_for_source(db: AsyncSession, source_config_id: uuid.UUID
     if not isinstance(config, dict):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unable to recover JSON config")
 
-    sites = config.get("sites")
-    if not isinstance(sites, list):
+    if not isinstance(config.get("sites"), list):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Config does not contain sites[]")
 
-    seen_keys: set[str] = set()
-    extracted: list[VodSite] = []
-    for index, entry in enumerate(sites):
-        if not isinstance(entry, dict):
-            continue
-        values = _site_values(source_config.id, import_job.id, entry, index)
-        if values is None:
-            continue
-        seen_keys.add(values["site_key"])
-        await _upsert_site(db, values)
-
-    await _disable_missing_sites(db, source_config.id, seen_keys)
-    await db.commit()
-
-    result = await db.scalars(
-        select(VodSite)
-        .where(VodSite.source_config_id == source_config.id)
-        .order_by(VodSite.sort_order.asc(), VodSite.site_name.asc())
+    return await sync_sites_from_root_config(
+        db,
+        source_config_id=source_config.id,
+        import_job_id=import_job.id,
+        root_config=config,
+        commit=True,
     )
-    extracted = list(result)
-    return extracted
 
 
 async def count_vod_sites_by_source(db: AsyncSession) -> dict[uuid.UUID, int]:
@@ -120,6 +105,40 @@ async def count_vod_sites_by_source(db: AsyncSession) -> dict[uuid.UUID, int]:
         .group_by(VodSite.source_config_id)
     )
     return {source_id: count for source_id, count in rows if source_id is not None}
+
+
+async def sync_sites_from_root_config(
+    db: AsyncSession,
+    *,
+    source_config_id: uuid.UUID,
+    import_job_id: uuid.UUID,
+    root_config: dict[str, Any],
+    commit: bool = False,
+) -> list[VodSite]:
+    sites = root_config.get("sites")
+    if not isinstance(sites, list):
+        return []
+
+    seen_keys: set[str] = set()
+    for index, entry in enumerate(sites):
+        if not isinstance(entry, dict):
+            continue
+        values = _site_values(source_config_id, import_job_id, entry, index)
+        if values is None:
+            continue
+        seen_keys.add(values["site_key"])
+        await _upsert_site(db, values)
+
+    await _disable_missing_sites(db, source_config_id, seen_keys)
+    if commit:
+        await db.commit()
+
+    result = await db.scalars(
+        select(VodSite)
+        .where(VodSite.source_config_id == source_config_id)
+        .order_by(VodSite.sort_order.asc(), VodSite.site_name.asc())
+    )
+    return list(result)
 
 
 async def _latest_successful_import_job(db: AsyncSession, source_config_id: uuid.UUID) -> ImportJob:

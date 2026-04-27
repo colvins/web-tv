@@ -20,6 +20,44 @@ export type SourceConfig = {
   updated_at: string
 }
 
+export type SourceSnapshotSiteSample = {
+  key: string | null
+  name: string | null
+  type: number | null
+  api: string | null
+  searchable: boolean | number | null
+  quickSearch: boolean | number | null
+  changeable: boolean | number | null
+  categories_hint: string[] | string | null
+}
+
+export type SourceSnapshotLiveSample = {
+  name: string | null
+  type: string | number | null
+  url_host: string | null
+  playerType: string | number | null
+}
+
+export type SourceSnapshot = {
+  id: string
+  source_config_id: string
+  import_job_id: string | null
+  content_sha256: string
+  detected_format: string | null
+  recovered_format: string | null
+  root_keys: string[]
+  sites_count: number
+  lives_count: number
+  parses_count: number
+  has_spider: boolean
+  spider_summary: string | null
+  site_samples: SourceSnapshotSiteSample[]
+  live_samples: SourceSnapshotLiveSample[]
+  warnings: string[]
+  created_at: string
+  updated_at: string
+}
+
 export type SourceConfigPayload = {
   name: string
   source_type: SourceType
@@ -462,6 +500,10 @@ export function listSourceVodSites(sourceConfigId: string): Promise<VodSite[]> {
 
 export function getLatestVodCapabilityAnalysis(sourceConfigId: string): Promise<VodCapabilityAnalysis | null> {
   return apiRequest<VodCapabilityAnalysis | null>(`/configs/${sourceConfigId}/vod-capability-analysis/latest`)
+}
+
+export function getLatestSourceSnapshot(sourceConfigId: string): Promise<SourceSnapshot> {
+  return apiRequest<SourceSnapshot>(`/configs/${sourceConfigId}/snapshot/latest`)
 }
 
 export function getVodCategories(sourceConfigId: string): Promise<VodBrowseCategoriesResponse> {

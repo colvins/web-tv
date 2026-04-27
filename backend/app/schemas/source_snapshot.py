@@ -12,6 +12,7 @@ class SourceSnapshotSiteSample(BaseModel):
     searchable: bool | int | None = None
     quickSearch: bool | int | None = None
     changeable: bool | int | None = None
+    categories_hint: list[str] | str | None = None
 
 
 class SourceSnapshotLiveSample(BaseModel):

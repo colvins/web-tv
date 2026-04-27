@@ -57,10 +57,28 @@ def serialize_source_snapshot(snapshot: SourceSnapshot) -> dict[str, Any]:
 
 
 async def store_source_snapshot(db: AsyncSession, import_job: ImportJob, content: bytes) -> None:
+    await store_source_snapshot_with_overrides(db, import_job, content)
+
+
+async def store_source_snapshot_with_overrides(
+    db: AsyncSession,
+    import_job: ImportJob,
+    content: bytes,
+    *,
+    root_config_override: dict[str, Any] | None = None,
+    recovered_format_override: str | None = None,
+    extra_warnings: list[str] | None = None,
+) -> None:
     if import_job.content_sha256 is None:
         return
 
-    values = _snapshot_values(import_job, content)
+    values = _snapshot_values(
+        import_job,
+        content,
+        root_config_override=root_config_override,
+        recovered_format_override=recovered_format_override,
+        extra_warnings=extra_warnings,
+    )
     statement = insert(SourceSnapshot).values(**values)
     update_values = {
         "import_job_id": statement.excluded.import_job_id,
@@ -82,41 +100,51 @@ async def store_source_snapshot(db: AsyncSession, import_job: ImportJob, content
         )
     )
 
-
-def _snapshot_values(import_job: ImportJob, content: bytes) -> dict[str, Any]:
+def _snapshot_values(
+    import_job: ImportJob,
+    content: bytes,
+    *,
+    root_config_override: dict[str, Any] | None = None,
+    recovered_format_override: str | None = None,
+    extra_warnings: list[str] | None = None,
+) -> dict[str, Any]:
     warnings: list[str] = []
     root_config: dict[str, Any] | None = None
     recovered_format: str | None = None
 
-    text = content.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")
-    if text.lstrip("\ufeff\r\n\t ").startswith("#EXTM3U"):
-        serialized = json.dumps({"raw_m3u": text}, ensure_ascii=False, separators=(",", ":"))
-        if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
-            root_config = {"raw_m3u": text}
-            recovered_format = "m3u_text"
-        else:
-            warnings.append("Recovered M3U text exceeded 2MB snapshot limit and was not stored.")
-            recovered_format = "m3u_text_too_large"
-
-    recovery = None if root_config is not None else recover_root_config(content)
-    recovered = recovery.recovered_value if recovery is not None else None
-    if root_config is not None:
-        pass
-    elif isinstance(recovered, dict):
-        serialized = json.dumps(recovered, ensure_ascii=False, separators=(",", ":"))
-        if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
-            root_config = recovered
-            recovered_format = f"{recovery.source_format}_json_object" if recovery is not None else "json_object"
-        else:
-            warnings.append("Recovered JSON config exceeded 2MB snapshot limit and was not stored.")
-            recovered_format = (
-                f"{recovery.source_format}_json_object_too_large" if recovery is not None else "json_object_too_large"
-            )
-    elif recovered is not None:
-        warnings.append("Recovered JSON config was not an object and was not stored.")
-        recovered_format = "json_non_object"
+    if root_config_override is not None:
+        root_config = root_config_override
+        recovered_format = recovered_format_override or "override"
     else:
-        warnings.append("No recoverable root JSON config was found.")
+        text = content.decode("utf-8", errors="replace").replace("\x00", "\uFFFD")
+        if text.lstrip("\ufeff\r\n\t ").startswith("#EXTM3U"):
+            serialized = json.dumps({"raw_m3u": text}, ensure_ascii=False, separators=(",", ":"))
+            if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
+                root_config = {"raw_m3u": text}
+                recovered_format = "m3u_text"
+            else:
+                warnings.append("Recovered M3U text exceeded 2MB snapshot limit and was not stored.")
+                recovered_format = "m3u_text_too_large"
+
+        recovery = None if root_config is not None else recover_root_config(content)
+        recovered = recovery.recovered_value if recovery is not None else None
+        if root_config is not None:
+            pass
+        elif isinstance(recovered, dict):
+            serialized = json.dumps(recovered, ensure_ascii=False, separators=(",", ":"))
+            if len(serialized.encode("utf-8")) <= MAX_ROOT_CONFIG_JSON_BYTES:
+                root_config = recovered
+                recovered_format = f"{recovery.source_format}_json_object" if recovery is not None else "json_object"
+            else:
+                warnings.append("Recovered JSON config exceeded 2MB snapshot limit and was not stored.")
+                recovered_format = (
+                    f"{recovery.source_format}_json_object_too_large" if recovery is not None else "json_object_too_large"
+                )
+        elif recovered is not None:
+            warnings.append("Recovered JSON config was not an object and was not stored.")
+            recovered_format = "json_non_object"
+        else:
+            warnings.append("No recoverable root JSON config was found.")
 
     root_keys = sorted(str(key) for key in root_config.keys()) if root_config else []
     sites_count = _list_count(root_config, "sites")
@@ -125,6 +153,8 @@ def _snapshot_values(import_job: ImportJob, content: bytes) -> dict[str, Any]:
     spider = root_config.get("spider") if root_config else None
     has_spider = spider not in (None, "", [], {})
 
+    if extra_warnings:
+        warnings.extend(extra_warnings)
     warnings.append("Snapshot stores metadata only; spider/JAR/JS/Python/ext and nested URLs were not executed or fetched.")
 
     return {
@@ -174,6 +204,7 @@ def _site_samples(value: Any) -> list[dict[str, Any]]:
                 "searchable": item.get("searchable"),
                 "quickSearch": item.get("quickSearch", item.get("quick_search")),
                 "changeable": item.get("changeable"),
+                "categories_hint": item.get("categories_hint", item.get("categoriesHint", item.get("categories"))),
             }
         )
     return samples

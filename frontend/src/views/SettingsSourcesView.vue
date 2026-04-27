@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
-  CloudDownload,
-  DatabaseZap,
-  Edit3,
   CheckCircle2,
+  CloudDownload,
+  Edit3,
   Plus,
   Power,
   RefreshCw,
   Rows3,
   Trash2,
+  Waves,
 } from 'lucide-vue-next'
 import {
   NButton,
@@ -17,7 +17,6 @@ import {
   NFormItem,
   NInput,
   NModal,
-  NSelect,
   NSwitch,
   useMessage,
   type FormInst,
@@ -28,21 +27,21 @@ import {
   createSourceConfig,
   deleteSourceConfig,
   extractLiveChannels,
-  extractVodSites,
   getCurrentVodSite,
+  getLatestSourceSnapshot,
   getLatestVodCapabilityAnalysis,
   importSourceConfig,
-  listSourceVodSites,
   listSourceConfigs,
+  listSourceVodSites,
   setCurrentVodSite,
-  updateVodSite,
   updateSourceConfig,
+  updateVodSite,
+  type CurrentVodSite,
   type ImportJob,
   type LiveExtractionStats,
-  type CurrentVodSite,
   type SourceConfig,
   type SourceConfigPayload,
-  type SourceType,
+  type SourceSnapshot,
   type VodCapabilityAnalysis,
   type VodSite,
 } from '@/api/sourceConfigs'
@@ -53,9 +52,9 @@ const sources = ref<SourceConfig[]>([])
 const loading = ref(false)
 const saving = ref(false)
 const importingIds = ref<Set<string>>(new Set())
-const extractingIds = ref<Set<string>>(new Set())
 const extractingLiveIds = ref<Set<string>>(new Set())
 const latestJob = ref<ImportJob | null>(null)
+const latestSnapshot = ref<SourceSnapshot | null>(null)
 const latestLiveExtraction = ref<LiveExtractionStats | null>(null)
 const currentVodSite = ref<CurrentVodSite | null>(null)
 const settingCurrentIds = ref<Set<string>>(new Set())
@@ -72,13 +71,6 @@ const deleteTarget = ref<SourceConfig | null>(null)
 const editingSource = ref<SourceConfig | null>(null)
 const formRef = ref<FormInst | null>(null)
 
-const sourceTypeOptions: Array<{ label: string; value: SourceType }> = [
-  { label: 'JSON', value: 'json' },
-  { label: 'M3U', value: 'm3u' },
-  { label: 'TXT', value: 'txt' },
-  { label: 'M3U8', value: 'm3u8' },
-]
-
 const form = reactive<SourceConfigPayload>({
   name: '',
   source_type: 'json',
@@ -88,7 +80,6 @@ const form = reactive<SourceConfigPayload>({
 
 const rules: FormRules = {
   name: [{ required: true, message: 'Name is required', trigger: ['input', 'blur'] }],
-  source_type: [{ required: true, message: 'Type is required', trigger: ['change', 'blur'] }],
   url: [
     { required: true, message: 'URL is required', trigger: ['input', 'blur'] },
     {
@@ -108,7 +99,30 @@ const rules: FormRules = {
 }
 
 const enabledCount = computed(() => sources.value.filter((source) => source.enabled).length)
+const importedCount = computed(() => sources.value.filter((source) => source.last_success_at).length)
 const modalTitle = computed(() => (editingSource.value ? 'Edit Source' : 'Add Source'))
+const latestImportedSource = computed(
+  () => sources.value.find((source) => source.id === latestJob.value?.source_config_id) ?? null,
+)
+const latestSiteNames = computed(() =>
+  (latestSnapshot.value?.site_samples ?? [])
+    .map((site) => site.name?.trim())
+    .filter((value): value is string => Boolean(value)),
+)
+const latestCategoryNames = computed(() => {
+  const names: string[] = []
+  for (const sample of latestSnapshot.value?.site_samples ?? []) {
+    const categories = sample.categories_hint
+    if (Array.isArray(categories)) {
+      names.push(...categories.map((value) => String(value).trim()).filter(Boolean))
+      continue
+    }
+    if (typeof categories === 'string' && categories.trim()) {
+      names.push(categories.trim())
+    }
+  }
+  return Array.from(new Set(names)).slice(0, 8)
+})
 
 function resetForm(source?: SourceConfig) {
   editingSource.value = source ?? null
@@ -147,20 +161,42 @@ async function loadCurrentVodSite() {
   }
 }
 
+async function loadLatestSnapshot(sourceConfigId: string) {
+  try {
+    latestSnapshot.value = await getLatestSourceSnapshot(sourceConfigId)
+  } catch (error) {
+    if (error instanceof ApiError) {
+      latestSnapshot.value = null
+      return
+    }
+    latestSnapshot.value = null
+  }
+}
+
 async function submitForm() {
   await formRef.value?.validate()
   saving.value = true
   try {
     if (editingSource.value) {
-      const updated = await updateSourceConfig(editingSource.value.id, { ...form })
+      const updated = await updateSourceConfig(editingSource.value.id, {
+        name: form.name,
+        url: form.url,
+        enabled: form.enabled,
+      })
       sources.value = sources.value.map((source) => (source.id === updated.id ? updated : source))
       message.success('Source updated')
-    } else {
-      const created = await createSourceConfig({ ...form })
-      sources.value = [created, ...sources.value]
-      message.success('Source created')
+      modalOpen.value = false
+      return
     }
+
+    const created = await createSourceConfig({
+      name: form.name,
+      source_type: 'json',
+      url: form.url,
+      enabled: form.enabled,
+    })
     modalOpen.value = false
+    await runImport(created, { successMessage: 'Detection and import completed' })
   } catch (error) {
     showError(error, 'Unable to save source')
   } finally {
@@ -181,14 +217,18 @@ async function toggleSource(source: SourceConfig, enabled: boolean) {
   }
 }
 
-async function runImport(source: SourceConfig) {
+async function runImport(
+  source: SourceConfig,
+  options: { successMessage?: string } = {},
+) {
   importingIds.value = new Set(importingIds.value).add(source.id)
+  latestSnapshot.value = null
   try {
     latestJob.value = await importSourceConfig(source.id)
     resetVodAnalysis(source.id)
-    await loadSources()
+    await Promise.all([loadSources(), loadCurrentVodSite(), loadLatestSnapshot(source.id)])
     if (latestJob.value.status === 'success') {
-      message.success('Import completed')
+      message.success(options.successMessage ?? 'Import completed')
     } else {
       message.error('Import failed')
     }
@@ -198,25 +238,6 @@ async function runImport(source: SourceConfig) {
     const next = new Set(importingIds.value)
     next.delete(source.id)
     importingIds.value = next
-  }
-}
-
-async function extractSites(source: SourceConfig) {
-  extractingIds.value = new Set(extractingIds.value).add(source.id)
-  try {
-    selectedSites.value = await extractVodSites(source.id)
-    resetVodAnalysis(source.id)
-    selectedSource.value = source
-    siteModalOpen.value = true
-    await loadSources()
-    await loadCurrentVodSite()
-    message.success(`Extracted ${selectedSites.value.length} sites`)
-  } catch (error) {
-    showError(error, 'Unable to extract sites')
-  } finally {
-    const next = new Set(extractingIds.value)
-    next.delete(source.id)
-    extractingIds.value = next
   }
 }
 
@@ -356,24 +377,18 @@ function formatDate(value: string | null) {
   }).format(new Date(value))
 }
 
-function formatBytes(value: number | null) {
-  if (value === null) return 'Unknown'
-  if (value < 1024) return `${value} B`
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
-  return `${(value / 1024 / 1024).toFixed(2)} MB`
-}
-
-function shortSha(value: string | null) {
-  return value ? value.slice(0, 12) : 'None'
-}
-
-function formatConfidence(value: number | null) {
-  return value === null ? 'Unknown' : `${Math.round(value * 100)}%`
-}
-
-function shortApi(value: string | null) {
-  if (!value) return 'No API'
-  return value.length > 64 ? `${value.slice(0, 64)}...` : value
+function detectedTypeLabel(source: SourceConfig | null) {
+  if (!source?.latest_detected_format) return 'Not imported'
+  if (source.latest_detected_format === 'catvod_json' || source.latest_detected_format === 'base64_json' || source.latest_detected_format === 'binary_wrapped') {
+    return 'FongMi config'
+  }
+  if (source.latest_detected_format === 'm3u' || source.latest_detected_format === 'txt') {
+    return 'Live playlist'
+  }
+  if (source.latest_detected_format === 'plain_json' && source.vod_site_count > 0) {
+    return 'MacCMS VOD collector'
+  }
+  return 'Unsupported'
 }
 
 function isCurrentSite(site: VodSite) {
@@ -408,9 +423,9 @@ onMounted(async () => {
       <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p class="text-sm uppercase tracking-[0.28em] text-white/42">Source Library</p>
-          <h2 class="mt-3 text-3xl font-semibold sm:text-5xl">Manage source configs.</h2>
+          <h2 class="mt-3 text-3xl font-semibold sm:text-5xl">Detect and import source URLs.</h2>
           <p class="mt-4 max-w-3xl text-sm leading-6 text-white/58">
-            Add JSON, M3U, TXT, and M3U8 source endpoints. Import and parsing behavior stays outside this screen.
+            Add a source name and URL, then let the backend detect whether it is a MacCMS VOD collector, FongMi-style config, live playlist, or unsupported response.
           </p>
         </div>
         <div class="flex flex-wrap gap-3">
@@ -425,7 +440,7 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="mt-8 grid gap-4 sm:grid-cols-3">
+      <div class="mt-8 grid gap-4 sm:grid-cols-4">
         <div class="rounded-[1.5rem] border border-white/10 bg-white/6 p-5">
           <p class="text-sm text-white/46">Total</p>
           <p class="mt-2 text-3xl font-semibold">{{ sources.length }}</p>
@@ -435,50 +450,50 @@ onMounted(async () => {
           <p class="mt-2 text-3xl font-semibold">{{ enabledCount }}</p>
         </div>
         <div class="rounded-[1.5rem] border border-white/10 bg-white/6 p-5">
-          <p class="text-sm text-white/46">Types</p>
-          <p class="mt-2 text-3xl font-semibold">4</p>
+          <p class="text-sm text-white/46">Imported</p>
+          <p class="mt-2 text-3xl font-semibold">{{ importedCount }}</p>
         </div>
-      </div>
-      <div class="mt-4 rounded-[1.5rem] border border-white/10 bg-white/6 p-5">
-        <p class="text-sm text-white/46">Current VOD site</p>
-        <p class="mt-2 text-lg font-semibold text-white">
-          <span v-if="currentVodSite">{{ currentVodSite.site_name }} / {{ currentVodSite.site_key }}</span>
-          <span v-else>No VOD site selected</span>
-        </p>
+        <div class="rounded-[1.5rem] border border-white/10 bg-white/6 p-5">
+          <p class="text-sm text-white/46">Current VOD site</p>
+          <p class="mt-2 text-sm font-semibold text-white">
+            <span v-if="currentVodSite">{{ currentVodSite.site_name }} / {{ currentVodSite.site_key }}</span>
+            <span v-else>No VOD site selected</span>
+          </p>
+        </div>
       </div>
     </div>
 
     <article v-if="latestJob" class="glass-panel rounded-[2rem] p-6 sm:p-7">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p class="text-sm uppercase tracking-[0.28em] text-white/42">Latest Import</p>
+          <p class="text-sm uppercase tracking-[0.28em] text-white/42">Latest Detect / Import</p>
           <h2 class="mt-3 text-2xl font-semibold text-white">
-            {{ latestJob.status }}
+            {{ detectedTypeLabel(latestImportedSource) }}
           </h2>
+          <p class="mt-2 text-sm text-white/56">
+            {{ latestImportedSource?.name ?? latestJob.source_config_id }}
+          </p>
         </div>
-        <div class="grid gap-3 text-sm text-white/62 sm:grid-cols-3 lg:min-w-[34rem]">
+        <div class="grid gap-3 text-sm text-white/62 sm:grid-cols-4 lg:min-w-[38rem]">
           <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
-            <span class="block text-white/40">Format</span>
+            <span class="block text-white/40">Status</span>
+            <span class="mt-1 block text-white">{{ latestJob.status }}</span>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+            <span class="block text-white/40">Detected format</span>
             <span class="mt-1 block text-white">{{ latestJob.detected_format ?? 'Unknown' }}</span>
           </div>
           <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
-            <span class="block text-white/40">Confidence</span>
-            <span class="mt-1 block text-white">{{ formatConfidence(latestJob.detection_confidence) }}</span>
+            <span class="block text-white/40">VOD sites</span>
+            <span class="mt-1 block text-white">{{ latestImportedSource?.vod_site_count ?? 0 }}</span>
           </div>
           <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
-            <span class="block text-white/40">Type</span>
-            <span class="mt-1 block break-words text-white">{{ latestJob.content_type ?? 'Unknown' }}</span>
-          </div>
-          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
-            <span class="block text-white/40">Length</span>
-            <span class="mt-1 block text-white">{{ formatBytes(latestJob.content_length) }}</span>
-          </div>
-          <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
-            <span class="block text-white/40">SHA256</span>
-            <span class="mt-1 block font-mono text-white">{{ shortSha(latestJob.content_sha256) }}</span>
+            <span class="block text-white/40">Live channels</span>
+            <span class="mt-1 block text-white">{{ latestImportedSource?.live_channel_count ?? 0 }}</span>
           </div>
         </div>
       </div>
+
       <p
         v-if="latestJob.detection_note"
         class="mt-5 rounded-2xl border border-white/10 bg-white/6 p-4 text-sm leading-6 text-white/66"
@@ -488,10 +503,35 @@ onMounted(async () => {
       <p v-if="latestJob.error_message" class="mt-5 rounded-2xl border border-red-300/20 bg-red-400/10 p-4 text-red-100">
         {{ latestJob.error_message }}
       </p>
-      <pre
-        v-if="latestJob.raw_preview"
-        class="mt-5 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-[1.5rem] border border-white/10 bg-black/24 p-5 text-sm leading-6 text-white/68"
-      >{{ latestJob.raw_preview }}</pre>
+
+      <div v-if="latestSiteNames.length || latestCategoryNames.length" class="mt-5 grid gap-4 md:grid-cols-2">
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+          <p class="text-xs uppercase tracking-[0.16em] text-white/40">Sample site names</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span
+              v-for="siteName in latestSiteNames"
+              :key="siteName"
+              class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/70"
+            >
+              {{ siteName }}
+            </span>
+            <span v-if="latestSiteNames.length === 0" class="text-sm text-white/46">No site samples</span>
+          </div>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+          <p class="text-xs uppercase tracking-[0.16em] text-white/40">Sample categories</p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span
+              v-for="category in latestCategoryNames"
+              :key="category"
+              class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/70"
+            >
+              {{ category }}
+            </span>
+            <span v-if="latestCategoryNames.length === 0" class="text-sm text-white/46">No category samples</span>
+          </div>
+        </div>
+      </div>
     </article>
 
     <article v-if="latestLiveExtraction" class="glass-panel rounded-[2rem] p-6 sm:p-7">
@@ -516,15 +556,6 @@ onMounted(async () => {
             <span class="mt-1 block text-white">{{ latestLiveExtraction.updated_count }}</span>
           </div>
         </div>
-      </div>
-      <div v-if="latestLiveExtraction.warnings.length" class="mt-5 grid gap-2">
-        <p
-          v-for="warning in latestLiveExtraction.warnings"
-          :key="warning"
-          class="rounded-2xl border border-white/10 bg-white/6 p-4 text-sm leading-6 text-white/66"
-        >
-          {{ warning }}
-        </p>
       </div>
     </article>
 
@@ -554,9 +585,9 @@ onMounted(async () => {
         class="tv-focus-card glass-panel flex min-h-72 flex-col rounded-[2rem] p-6"
       >
         <div class="flex items-start justify-between gap-4">
-          <div>
+          <div class="min-w-0">
             <span class="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs uppercase tracking-[0.18em] text-white/62">
-              {{ source.source_type }}
+              {{ detectedTypeLabel(source) }}
             </span>
             <h3 class="mt-5 text-2xl font-semibold text-white">{{ source.name }}</h3>
           </div>
@@ -570,16 +601,16 @@ onMounted(async () => {
           </NSwitch>
         </div>
 
-        <p class="mt-5 line-clamp-2 break-all text-sm leading-6 text-white/56">{{ source.url }}</p>
+        <p class="mt-5 truncate text-sm leading-6 text-white/56" :title="source.url">{{ source.url }}</p>
 
-        <div class="mt-auto grid gap-3 pt-8 text-sm text-white/50">
+        <div class="mt-6 grid gap-3 text-sm text-white/50">
+          <div class="flex justify-between gap-4">
+            <span>Detected format</span>
+            <span class="text-right text-white/72">{{ source.latest_detected_format ?? 'Not imported' }}</span>
+          </div>
           <div class="flex justify-between gap-4">
             <span>Last import</span>
             <span class="text-white/72">{{ formatDate(source.last_import_at) }}</span>
-          </div>
-          <div class="flex justify-between gap-4">
-            <span>Last success</span>
-            <span class="text-white/72">{{ formatDate(source.last_success_at) }}</span>
           </div>
           <div class="flex justify-between gap-4">
             <span>VOD sites</span>
@@ -589,9 +620,62 @@ onMounted(async () => {
             <span>Live channels</span>
             <span class="text-white/72">{{ source.live_channel_count }}</span>
           </div>
+          <div v-if="sourceCurrentLabel(source)" class="rounded-2xl border border-aurora/25 bg-aurora/10 p-3 text-white">
+            <span class="block text-xs uppercase tracking-[0.18em] text-white/48">Current</span>
+            <span class="mt-1 block text-sm">{{ sourceCurrentLabel(source) }}</span>
+          </div>
+          <p v-if="source.last_error" class="rounded-2xl border border-red-300/20 bg-red-400/10 p-3 text-red-100">
+            {{ source.last_error }}
+          </p>
+        </div>
+
+        <div class="mt-6 flex flex-wrap gap-3">
+          <NButton
+            round
+            type="primary"
+            :loading="importingIds.has(source.id)"
+            @click="runImport(source)"
+          >
+            <template #icon><CloudDownload class="h-4 w-4" /></template>
+            Detect / Import
+          </NButton>
+          <NButton round secondary :disabled="source.vod_site_count === 0" @click="openSites(source)">
+            <template #icon><Rows3 class="h-4 w-4" /></template>
+            Sites
+          </NButton>
+        </div>
+
+        <details class="mt-4 rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+          <summary class="cursor-pointer list-none text-sm font-medium text-white/74">
+            Advanced
+          </summary>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <NButton v-if="supportsLiveExtraction(source)" round secondary :loading="extractingLiveIds.has(source.id)" @click="extractLive(source)">
+              <template #icon><Waves class="h-4 w-4" /></template>
+              Extract Live
+            </NButton>
+            <NButton
+              round
+              secondary
+              :loading="vodAnalysisLoadingIds.has(source.id)"
+              @click="toggleVodAnalysis(source)"
+            >
+              <template #icon><Rows3 class="h-4 w-4" /></template>
+              {{ isVodAnalysisOpen(source.id) ? 'Hide VOD Capability' : 'View VOD Capability' }}
+            </NButton>
+            <NButton round secondary @click="openEditModal(source)">
+              <template #icon><Edit3 class="h-4 w-4" /></template>
+              Edit
+            </NButton>
+            <NButton round secondary type="error" @click="deleteTarget = source">
+              <template #icon><Trash2 class="h-4 w-4" /></template>
+              Delete
+            </NButton>
+          </div>
+
           <div
             v-if="isVodAnalysisOpen(source.id)"
-            class="rounded-[1.5rem] border border-white/10 bg-black/16 p-4"
+            class="mt-4 rounded-[1.5rem] border border-white/10 bg-black/16 p-4"
           >
             <div v-if="vodAnalysisLoadingIds.has(source.id)" class="space-y-3">
               <div class="h-3 w-28 animate-pulse rounded-full bg-white/12"></div>
@@ -632,65 +716,7 @@ onMounted(async () => {
             </div>
             <p v-else class="text-sm leading-6 text-white/48">No VOD analysis yet.</p>
           </div>
-          <div v-if="sourceCurrentLabel(source)" class="rounded-2xl border border-aurora/25 bg-aurora/10 p-3 text-white">
-            <span class="block text-xs uppercase tracking-[0.18em] text-white/48">Current</span>
-            <span class="mt-1 block text-sm">{{ sourceCurrentLabel(source) }}</span>
-          </div>
-          <p v-if="source.last_error" class="rounded-2xl border border-red-300/20 bg-red-400/10 p-3 text-red-100">
-            {{ source.last_error }}
-          </p>
-        </div>
-
-        <div class="mt-6 flex flex-wrap gap-3">
-          <NButton
-            round
-            type="primary"
-            :loading="importingIds.has(source.id)"
-            @click="runImport(source)"
-          >
-            <template #icon><CloudDownload class="h-4 w-4" /></template>
-            Import
-          </NButton>
-          <NButton
-            round
-            secondary
-            :loading="extractingIds.has(source.id)"
-            @click="extractSites(source)"
-          >
-            <template #icon><DatabaseZap class="h-4 w-4" /></template>
-            Extract Sites
-          </NButton>
-          <NButton
-            v-if="supportsLiveExtraction(source)"
-            round
-            secondary
-            :loading="extractingLiveIds.has(source.id)"
-            @click="extractLive(source)"
-          >
-            <template #icon><DatabaseZap class="h-4 w-4" /></template>
-            Extract Live
-          </NButton>
-          <NButton round secondary :disabled="source.vod_site_count === 0" @click="openSites(source)">
-            <template #icon><Rows3 class="h-4 w-4" /></template>
-            Sites
-          </NButton>
-          <NButton
-            round
-            secondary
-            :loading="vodAnalysisLoadingIds.has(source.id)"
-            @click="toggleVodAnalysis(source)"
-          >
-            <template #icon><Rows3 class="h-4 w-4" /></template>
-            {{ isVodAnalysisOpen(source.id) ? 'Hide VOD Capability' : 'View VOD Capability' }}
-          </NButton>
-          <NButton round secondary class="flex-1" @click="openEditModal(source)">
-            <template #icon><Edit3 class="h-4 w-4" /></template>
-            Edit
-          </NButton>
-          <NButton round secondary type="error" @click="deleteTarget = source">
-            <template #icon><Trash2 class="h-4 w-4" /></template>
-          </NButton>
-        </div>
+        </details>
       </article>
     </div>
   </section>
@@ -700,18 +726,17 @@ onMounted(async () => {
       <NFormItem label="Name" path="name">
         <NInput v-model:value="form.name" placeholder="Primary source" />
       </NFormItem>
-      <NFormItem label="Type" path="source_type">
-        <NSelect v-model:value="form.source_type" :options="sourceTypeOptions" />
-      </NFormItem>
       <NFormItem label="URL" path="url">
-        <NInput v-model:value="form.url" placeholder="https://example.com/source.json" />
+        <NInput v-model:value="form.url" placeholder="https://example.com/source-or-collector" />
       </NFormItem>
       <NFormItem label="Enabled">
         <NSwitch v-model:value="form.enabled" />
       </NFormItem>
       <div class="mt-4 flex justify-end gap-3">
         <NButton round @click="modalOpen = false">Cancel</NButton>
-        <NButton round type="primary" :loading="saving" @click="submitForm">Save</NButton>
+        <NButton round type="primary" :loading="saving" @click="submitForm">
+          {{ editingSource ? 'Save' : 'Detect / Import' }}
+        </NButton>
       </div>
     </NForm>
   </NModal>
@@ -768,7 +793,7 @@ onMounted(async () => {
                 Current
               </span>
             </div>
-            <p class="mt-3 break-all text-sm leading-6 text-white/54">{{ shortApi(site.api) }}</p>
+            <p class="mt-3 break-all text-sm leading-6 text-white/54">{{ site.api ?? 'No API' }}</p>
           </div>
           <div class="flex shrink-0 items-center gap-3">
             <NButton
