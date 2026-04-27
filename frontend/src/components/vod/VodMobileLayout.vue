@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RefreshCw } from 'lucide-vue-next'
 import { NButton } from 'naive-ui'
 
 import type { VodBrowseCategory, VodBrowseItem } from '@/api/sourceConfigs'
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   selectCategory: [categoryId: string | null]
   selectItem: [item: VodBrowseItem]
   changePage: [direction: -1 | 1]
+  refresh: []
 }>()
 </script>
 
@@ -49,9 +51,14 @@ const emit = defineEmits<{
 
     <template v-else>
       <article class="glass-panel rounded-[1.5rem] p-4">
-        <div class="grid gap-1.5">
-          <p class="text-[0.68rem] uppercase tracking-[0.22em] text-white/38">当前源</p>
-          <h2 class="text-xl font-semibold text-white">{{ currentSourceName }}</h2>
+        <div class="flex items-start justify-between gap-3">
+          <div class="grid gap-1.5">
+            <p class="text-[0.68rem] uppercase tracking-[0.22em] text-white/38">当前源</p>
+            <h2 class="text-xl font-semibold text-white">{{ currentSourceName }}</h2>
+          </div>
+          <NButton quaternary circle size="small" :loading="loading || sourceLoading" @click="emit('refresh')">
+            <template #icon><RefreshCw class="h-4 w-4" /></template>
+          </NButton>
         </div>
         <VodCategoryChips
           compact

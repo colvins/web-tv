@@ -342,10 +342,7 @@ watch(
     <VodSourceSelector
       :compact="!isDesktopLayout"
       :search-query="searchQuery"
-      :loading="loading"
-      :source-loading="sourceLoading"
       :search-loading="searchLoading"
-      @refresh="bootstrap"
       @update:search-query="(value) => (searchQuery = value)"
       @search="runSearch(1)"
     />
@@ -372,6 +369,7 @@ watch(
     @select-category="selectCategory"
     @select-item="openDetail"
     @change-page="changePage"
+    @refresh="bootstrap"
   />
 
   <VodMobileLayout
@@ -395,5 +393,6 @@ watch(
     @select-category="selectCategory"
     @select-item="openDetail"
     @change-page="changePage"
+    @refresh="bootstrap"
   />
 </template>
