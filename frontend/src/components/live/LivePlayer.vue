@@ -136,9 +136,8 @@ async function copyDiagnostics() {
         :class="playback.controlsVisible.value ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'"
       >
         <div class="flex items-start justify-between gap-3 sm:gap-4">
-          <div class="min-w-0">
-            <p class="text-[11px] uppercase tracking-[0.28em] text-white/42 sm:text-xs">Now Playing</p>
-            <div v-if="playback.selectedChannel.value" class="mt-3 flex items-center gap-3">
+          <div v-if="playback.selectedChannel.value" class="min-w-0">
+            <div class="flex items-center gap-3">
               <img
                 v-if="playback.selectedChannel.value.tvg_logo"
                 :src="playback.selectedChannel.value.tvg_logo"
@@ -155,17 +154,11 @@ async function copyDiagnostics() {
                 <h3 class="truncate text-lg font-semibold text-white sm:text-2xl">
                   {{ playback.selectedChannel.value.name }}
                 </h3>
-                <p class="truncate text-sm text-white/56">
-                  {{ playback.selectedChannel.value.group_title ?? 'Ungrouped' }}
-                </p>
               </div>
-            </div>
-            <div v-else class="mt-3">
-              <h3 class="text-lg font-semibold text-white sm:text-2xl">No channel selected</h3>
-              <p class="mt-2 max-w-md text-sm text-white/56">Choose a channel from the list to load a stream.</p>
             </div>
           </div>
           <div
+            v-if="playback.playbackState.value !== 'idle'"
             class="shrink-0 rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.24em] sm:text-xs"
             :class="
               playback.playbackState.value === 'error'
@@ -178,13 +171,11 @@ async function copyDiagnostics() {
             "
           >
             {{
-              playback.playbackState.value === 'idle'
-                ? 'Idle'
-                : playback.playbackState.value === 'loading'
-                  ? 'Loading'
-                  : playback.playbackState.value === 'ready'
-                    ? playback.isPlaying.value
-                      ? 'Playing'
+              playback.playbackState.value === 'loading'
+                ? 'Loading'
+                : playback.playbackState.value === 'ready'
+                  ? playback.isPlaying.value
+                    ? 'Playing'
                       : 'Ready'
                     : 'Error'
             }}
@@ -192,7 +183,7 @@ async function copyDiagnostics() {
         </div>
 
         <div class="space-y-3">
-          <p class="max-w-2xl text-sm leading-6 text-white/72 drop-shadow">
+          <p v-if="playback.playbackState.value !== 'idle'" class="max-w-2xl text-sm leading-6 text-white/72 drop-shadow">
             {{ playback.playbackState.value === 'error' ? playback.playbackError.value : playback.playerStatusText.value }}
           </p>
 
@@ -373,6 +364,7 @@ async function copyDiagnostics() {
               <Maximize class="h-5 w-5 sm:h-6 sm:w-6" />
             </button>
             <div
+              v-if="playback.playbackState.value !== 'idle'"
               class="hidden min-h-12 items-center rounded-full border border-white/14 bg-black/46 px-4 text-sm text-white/72 shadow-[0_12px_32px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:flex"
             >
               <LoaderCircle
@@ -381,15 +373,13 @@ async function copyDiagnostics() {
               />
               <span>
                 {{
-                  playback.playbackState.value === 'idle'
-                    ? 'Select a channel'
-                    : playback.playbackState.value === 'loading'
+                  playback.playbackState.value === 'loading'
                       ? 'Loading stream'
-                      : playback.playbackState.value === 'error'
-                        ? 'Playback error'
-                        : playback.isFullscreen.value
-                          ? 'Fullscreen active'
-                          : 'Player ready'
+                    : playback.playbackState.value === 'error'
+                      ? 'Playback error'
+                      : playback.isFullscreen.value
+                        ? 'Fullscreen active'
+                        : 'Player ready'
                 }}
               </span>
             </div>

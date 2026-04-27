@@ -10,7 +10,6 @@ import {
   listLiveChannels,
   listLiveGroups,
   listSourceConfigs,
-  updateLiveChannel,
   type LiveChannel,
   type LiveChannelGroup,
   type SourceConfig,
@@ -29,7 +28,6 @@ const query = ref('')
 const loading = ref(false)
 const sourceLoading = ref(false)
 const loadError = ref<string | null>(null)
-const togglingIds = ref<Set<string>>(new Set())
 const isDesktopLayout = ref(true)
 const channelPlaybackStatuses = ref<Record<string, ChannelPlaybackStatus>>({})
 const playback = useLivePlayback()
@@ -180,24 +178,6 @@ async function bootstrap() {
   }
 }
 
-async function toggleChannel(channel: LiveChannel, enabled: boolean) {
-  const previous = channel.enabled
-  channel.enabled = enabled
-  togglingIds.value = new Set(togglingIds.value).add(channel.id)
-  try {
-    const updated = await updateLiveChannel(channel.id, enabled)
-    channels.value = channels.value.map((item) => (item.id === updated.id ? updated : item))
-    playback.updateSelectedChannel(updated)
-  } catch (error) {
-    channel.enabled = previous
-    message.error(error instanceof ApiError ? error.message : 'Unable to update channel')
-  } finally {
-    const next = new Set(togglingIds.value)
-    next.delete(channel.id)
-    togglingIds.value = next
-  }
-}
-
 function selectGroup(groupId: string | null) {
   selectedGroupId.value = groupId
 }
@@ -314,13 +294,9 @@ onBeforeUnmount(() => {
         :channels="channels"
         :selected-group-id="selectedGroupId"
         :loading="loading"
-        :toggling-ids="togglingIds"
         :playback="playback"
-        :channel-playback-statuses="channelPlaybackStatuses"
-        @refresh="loadLiveData"
         @select-group="selectGroup"
         @select-channel="selectChannel"
-        @toggle-channel="toggleChannel"
       />
       <LiveMobileLayout
         v-else
@@ -329,13 +305,9 @@ onBeforeUnmount(() => {
         :channels="channels"
         :selected-group-id="selectedGroupId"
         :loading="loading"
-        :toggling-ids="togglingIds"
         :playback="playback"
-        :channel-playback-statuses="channelPlaybackStatuses"
-        @refresh="loadLiveData"
         @select-group="selectGroup"
         @select-channel="selectChannel"
-        @toggle-channel="toggleChannel"
       />
     </template>
   </section>

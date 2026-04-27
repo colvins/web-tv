@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Search, SlidersHorizontal } from 'lucide-vue-next'
-import { NButton, NInput, NSelect } from 'naive-ui'
+import { Search } from 'lucide-vue-next'
+import { NInput, NSelect } from 'naive-ui'
 
 import LiveChannelCard from '@/components/live/LiveChannelCard.vue'
 import LivePlayer from '@/components/live/LivePlayer.vue'
-import type { ChannelPlaybackStatus, LivePlayback } from '@/composables/useLivePlayback'
+import type { LivePlayback } from '@/composables/useLivePlayback'
 import type { LiveChannel, LiveChannelGroup } from '@/api/sourceConfigs'
 
 const props = defineProps<{
@@ -14,17 +14,13 @@ const props = defineProps<{
   selectedGroupId: string | null
   query: string
   loading: boolean
-  togglingIds: Set<string>
   playback: LivePlayback
-  channelPlaybackStatuses: Record<string, ChannelPlaybackStatus>
 }>()
 
 const emit = defineEmits<{
   'update:query': [value: string]
-  refresh: []
   selectGroup: [groupId: string | null]
   selectChannel: [channel: LiveChannel]
-  toggleChannel: [channel: LiveChannel, enabled: boolean]
 }>()
 
 const queryModel = computed({
@@ -63,10 +59,6 @@ const groupOptions = computed(() => [
             placeholder="Channel group"
             @update:value="(value) => emit('selectGroup', value === ALL_GROUP_VALUE ? null : String(value))"
           />
-          <NButton round secondary :loading="loading" class="min-h-12" @click="$emit('refresh')">
-            <template #icon><SlidersHorizontal class="h-4 w-4" /></template>
-            Refresh
-          </NButton>
         </div>
       </div>
     </div>
@@ -94,10 +86,7 @@ const groupOptions = computed(() => [
           :key="channel.id"
           :channel="channel"
           :selected="playback.selectedChannelId.value === channel.id"
-          :toggling="togglingIds.has(channel.id)"
-          :playback-status="channelPlaybackStatuses[channel.id] ?? 'unknown'"
           @select="$emit('selectChannel', $event)"
-          @toggle="(channel, enabled) => $emit('toggleChannel', channel, enabled)"
         />
       </div>
     </div>
