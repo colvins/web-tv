@@ -1,27 +1,31 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ChevronLeft, Film, Maximize, Pause, Play, RefreshCw, Search, Settings, Volume2, VolumeX } from 'lucide-vue-next'
-import { NButton, NInput, NSelect, useMessage } from 'naive-ui'
+import { RefreshCw, Settings } from 'lucide-vue-next'
+import { NButton, useMessage } from 'naive-ui'
 import { RouterLink } from 'vue-router'
 
 import {
   getCurrentVodSite,
+  getVodCategories,
   getVodDetail,
   getVodEpisodePlay,
-  getVodCategories,
   getVodList,
   listSourceConfigs,
   searchVod,
-  type VodBrowseDetailResponse,
-  type VodEpisodePlayResponse,
   type CurrentVodSite,
   type SourceConfig,
   type VodBrowseCategoriesResponse,
+  type VodBrowseDetailResponse,
   type VodBrowseItem,
   type VodBrowsePageResponse,
+  type VodEpisodePlayResponse,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 import { useVodPlayback } from '@/composables/useVodPlayback'
+import VodCatalogGrid from '@/components/vod/VodCatalogGrid.vue'
+import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
+import VodDetailPanel from '@/components/vod/VodDetailPanel.vue'
+import VodSourceSelector from '@/components/vod/VodSourceSelector.vue'
 
 const message = useMessage()
 const sources = ref<SourceConfig[]>([])
@@ -247,10 +251,6 @@ function onSourceChange(value: string | null) {
   void loadSource(value)
 }
 
-function posterAlt(item: VodBrowseItem) {
-  return item.name
-}
-
 onMounted(bootstrap)
 </script>
 
@@ -319,127 +319,39 @@ onMounted(bootstrap)
       </div>
     </div>
 
-    <article v-else class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-          <p class="text-sm uppercase tracking-[0.18em] text-white/42">Source</p>
-          <NSelect
-            class="mt-4"
-            :value="selectedSourceId"
-            :options="sourceOptions"
-            placeholder="Select a source"
-            :loading="loading || sourceLoading"
-            @update:value="onSourceChange"
-          />
-          <p v-if="currentVodSite?.source_config_id === selectedSourceId" class="mt-3 text-xs text-white/48">
-            Current VOD selection points at this source package.
-          </p>
-        </div>
+    <template v-else>
+      <VodSourceSelector
+        :source-options="sourceOptions"
+        :selected-source-id="selectedSourceId"
+        :current-vod-source-id="currentVodSite?.source_config_id ?? null"
+        :search-query="searchQuery"
+        :loading="loading"
+        :source-loading="sourceLoading"
+        :search-loading="searchLoading"
+        :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
+        @update:selected-source-id="onSourceChange"
+        @update:search-query="(value) => (searchQuery = value)"
+        @search="runSearch(1)"
+        @reset="selectCategory(null)"
+      />
 
-        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-          <div class="flex flex-col gap-4 lg:flex-row">
-            <NInput
-              v-model:value="searchQuery"
-              placeholder="Search titles"
-              clearable
-              @keyup.enter="runSearch(1)"
-            />
-            <div class="flex gap-3">
-              <NButton round type="primary" :loading="searchLoading" @click="runSearch(1)">
-                <template #icon><Search class="h-4 w-4" /></template>
-                Search
-              </NButton>
-              <NButton round secondary :disabled="!submittedQuery && !selectedCategoryId" @click="selectCategory(null)">
-                Reset
-              </NButton>
-            </div>
-          </div>
-          <p class="mt-4 text-sm text-white/48">
-            Search and category browsing use read-only collector metadata only.
-          </p>
-        </div>
-      </div>
-
-      <div class="mt-6 flex flex-wrap gap-3">
-        <button
-          type="button"
-          class="rounded-full border px-4 py-2 text-sm transition"
-          :class="selectedCategoryId === null ? 'border-white/30 bg-white/14 text-white' : 'border-white/10 bg-white/6 text-white/62 hover:bg-white/10'"
-          @click="selectCategory(null)"
-        >
-          All
-        </button>
-        <button
-          v-for="category in categoriesResponse?.categories ?? []"
-          :key="`${category.type_id}-${category.type_name}`"
-          type="button"
-          class="rounded-full border px-4 py-2 text-sm transition"
-          :class="
-            selectedCategoryId === String(category.type_id)
-              ? 'border-white/30 bg-white/14 text-white'
-              : 'border-white/10 bg-white/6 text-white/62 hover:bg-white/10'
-          "
-          @click="selectCategory(category.type_id === null ? null : String(category.type_id))"
-        >
-          {{ category.type_name ?? `Type ${category.type_id}` }}
-        </button>
-      </div>
-    </article>
-
-    <div v-if="sourceLoading || searchLoading" class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-      <div v-for="index in 8" :key="index" class="glass-panel min-h-80 animate-pulse rounded-[2rem] p-5">
-        <div class="aspect-[3/4] rounded-[1.5rem] bg-white/8"></div>
-        <div class="mt-5 h-5 w-2/3 rounded-full bg-white/10"></div>
-        <div class="mt-3 h-3 w-1/3 rounded-full bg-white/8"></div>
-      </div>
-    </div>
-
-    <div v-else-if="pageResponse?.items.length" class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-      <article
-        v-for="item in pageResponse.items"
-        :key="`${item.vod_id}-${item.name}`"
-        class="tv-focus-card glass-panel overflow-hidden rounded-[2rem] p-4"
-      >
-        <button type="button" class="block w-full text-left" @click="openDetail(item)">
-        <div class="relative overflow-hidden rounded-[1.5rem] bg-white/6">
-          <img
-            v-if="item.poster"
-            :src="item.poster"
-            :alt="posterAlt(item)"
-            class="aspect-[3/4] w-full object-cover"
-            loading="lazy"
-          />
-          <div v-else class="flex aspect-[3/4] items-center justify-center text-white/30">
-            <Film class="h-12 w-12" />
-          </div>
-          <div
-            v-if="item.remarks"
-            class="absolute left-3 top-3 rounded-full border border-black/10 bg-black/55 px-3 py-1 text-xs text-white"
-          >
-            {{ item.remarks }}
-          </div>
-        </div>
-
-        <div class="mt-5">
-          <h3 class="line-clamp-2 text-lg font-semibold text-white">{{ item.name }}</h3>
-          <p class="mt-2 text-sm text-white/54">{{ item.category_name ?? 'Uncategorized' }}</p>
-          <div class="mt-4 flex flex-wrap gap-2 text-xs text-white/60">
-            <span v-if="item.year" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ item.year }}</span>
-            <span v-if="item.area" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ item.area }}</span>
-            <span
-              v-if="item.vod_id !== null && item.vod_id !== undefined"
-              class="rounded-full border border-white/10 bg-white/6 px-3 py-1"
-            >
-              ID {{ item.vod_id }}
-            </span>
-          </div>
-        </div>
-        </button>
+      <article class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
+        <VodCategoryChips
+          :categories="categoriesResponse?.categories ?? []"
+          :selected-category-id="selectedCategoryId"
+          @select="selectCategory"
+        />
       </article>
-    </div>
+
+      <VodCatalogGrid
+        :items="pageResponse?.items ?? []"
+        :loading="sourceLoading || searchLoading"
+        @select-item="openDetail"
+      />
+    </template>
 
     <div
-      v-else-if="!loading && !sourceLoading && !searchLoading && !noUsableSource"
+      v-if="!loading && !sourceLoading && !searchLoading && !noUsableSource && !pageResponse?.items.length"
       class="glass-panel flex min-h-[18rem] items-end rounded-[2.5rem] p-7 sm:p-10"
     >
       <div class="max-w-3xl">
@@ -463,227 +375,16 @@ onMounted(bootstrap)
       </div>
     </article>
 
-    <article v-if="detail || detailLoading || detailError" class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p class="text-sm uppercase tracking-[0.26em] text-white/42">Detail</p>
-          <h3 class="mt-3 text-2xl font-semibold text-white sm:text-3xl">{{ detailTitle }}</h3>
-        </div>
-        <NButton round secondary @click="closeDetail">
-          <template #icon><ChevronLeft class="h-4 w-4" /></template>
-          Back to results
-        </NButton>
-      </div>
-
-      <div v-if="detailLoading" class="mt-6 grid gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <div class="aspect-[3/4] animate-pulse rounded-[2rem] bg-white/8"></div>
-        <div class="space-y-4">
-          <div class="h-8 w-2/3 animate-pulse rounded-full bg-white/10"></div>
-          <div class="h-4 w-full animate-pulse rounded-full bg-white/8"></div>
-          <div class="h-4 w-5/6 animate-pulse rounded-full bg-white/8"></div>
-        </div>
-      </div>
-
-      <p v-else-if="detailError" class="mt-6 rounded-3xl border border-red-300/18 bg-red-400/10 p-4 text-sm text-red-100">
-        {{ detailError }}
-      </p>
-
-      <div v-else-if="detail" class="mt-6 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <div class="overflow-hidden rounded-[2rem] border border-white/10 bg-white/6">
-          <img
-            v-if="detail.poster"
-            :src="detail.poster"
-            :alt="detail.name"
-            class="aspect-[3/4] w-full object-cover"
-          />
-          <div v-else class="flex aspect-[3/4] items-center justify-center text-white/30">
-            <Film class="h-16 w-16" />
-          </div>
-        </div>
-
-        <div class="space-y-5">
-          <div class="flex flex-wrap gap-2 text-xs text-white/62">
-            <span v-if="detail.category_name" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.category_name }}</span>
-            <span v-if="detail.year" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.year }}</span>
-            <span v-if="detail.area" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.area }}</span>
-            <span v-if="detail.language" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.language }}</span>
-            <span v-if="detail.remarks" class="rounded-full border border-white/10 bg-white/6 px-3 py-1">{{ detail.remarks }}</span>
-          </div>
-
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
-              <p class="text-xs uppercase tracking-[0.16em] text-white/40">Actor</p>
-              <p class="mt-2 text-sm leading-6 text-white/78">{{ detail.actor ?? 'Not provided' }}</p>
-            </div>
-            <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
-              <p class="text-xs uppercase tracking-[0.16em] text-white/40">Director</p>
-              <p class="mt-2 text-sm leading-6 text-white/78">{{ detail.director ?? 'Not provided' }}</p>
-            </div>
-          </div>
-
-          <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-            <p class="text-xs uppercase tracking-[0.16em] text-white/40">Description</p>
-            <p class="mt-3 text-sm leading-7 text-white/74">{{ detail.description ?? 'No description returned by the collector.' }}</p>
-          </div>
-
-          <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-            <p class="text-xs uppercase tracking-[0.16em] text-white/40">Collector metadata</p>
-            <div class="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-white/70">
-              <p>Site: {{ detail.site.site_name ?? detail.site.site_key ?? 'Unknown' }}</p>
-              <p>Host: {{ detail.site.api_host ?? 'Unknown' }}</p>
-              <p>Path: {{ detail.site.api_path ?? 'Unknown' }}</p>
-            </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <span
-                v-for="queryKey in detail.site.api_query_keys"
-                :key="queryKey"
-                class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/62"
-              >
-                {{ queryKey }}
-              </span>
-            </div>
-          </div>
-
-          <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-            <div class="flex items-center justify-between gap-4">
-              <p class="text-xs uppercase tracking-[0.16em] text-white/40">Play sources</p>
-              <span class="text-xs text-white/46">Device-side playback only</span>
-            </div>
-            <div
-              class="mt-4 overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/32"
-              data-vod-player-shell
-            >
-              <div class="relative aspect-video bg-black">
-                <video
-                  :ref="playback.setVideoElement"
-                  class="h-full w-full bg-black object-contain"
-                  playsinline
-                  controlslist="nodownload noplaybackrate"
-                  preload="none"
-                  @canplay="playback.handleCanPlay"
-                  @error="playback.handleVideoError"
-                  @pause="playback.handlePause"
-                  @playing="playback.handlePlaying"
-                  @volumechange="playback.handleVolumeChange"
-                  @waiting="playback.handleWaiting"
-                ></video>
-                <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-4">
-                  <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                    <div class="min-w-0">
-                      <p class="text-[11px] uppercase tracking-[0.22em] text-white/42">Player</p>
-                      <h4 class="mt-2 truncate text-lg font-semibold text-white">
-                        {{ playback.currentEpisode.value?.episode_name ?? 'Select an episode' }}
-                      </h4>
-                      <p class="mt-2 text-sm text-white/62">{{ playback.playerStatusText.value }}</p>
-                      <p v-if="episodeError || playback.errorMessage.value" class="mt-2 text-xs text-red-100">
-                        {{ episodeError ?? playback.errorMessage.value }}
-                      </p>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span
-                        class="rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em]"
-                        :class="
-                          playback.playbackState.value === 'error'
-                            ? 'border-red-300/30 bg-red-400/12 text-red-100'
-                            : playback.playbackState.value === 'loading'
-                              ? 'border-amber-300/30 bg-amber-300/12 text-amber-100'
-                              : playback.playbackState.value === 'ready'
-                                ? 'border-emerald-300/30 bg-emerald-300/12 text-emerald-100'
-                                : 'border-white/12 bg-white/8 text-white/56'
-                        "
-                      >
-                        {{ playback.playbackState.value }}
-                      </span>
-                      <NButton round secondary :disabled="!playback.currentEpisode.value" @click="playback.togglePlayback">
-                        <template #icon>
-                          <Pause v-if="playback.isPlaying.value" class="h-4 w-4" />
-                          <Play v-else class="h-4 w-4" />
-                        </template>
-                        {{ playback.isPlaying.value ? 'Pause' : 'Play' }}
-                      </NButton>
-                      <NButton round secondary :disabled="!playback.currentEpisode.value" @click="playback.toggleMute">
-                        <template #icon>
-                          <VolumeX v-if="playback.isMuted.value" class="h-4 w-4" />
-                          <Volume2 v-else class="h-4 w-4" />
-                        </template>
-                        {{ playback.isMuted.value ? 'Unmute' : 'Mute' }}
-                      </NButton>
-                      <NButton round secondary :disabled="!playback.currentEpisode.value" @click="playback.toggleFullscreen">
-                        <template #icon><Maximize class="h-4 w-4" /></template>
-                        Fullscreen
-                      </NButton>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="grid gap-3 border-t border-white/10 bg-black/26 p-4 sm:grid-cols-3">
-                <div class="rounded-2xl border border-white/10 bg-white/6 p-3 text-sm text-white/70">
-                  <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">Stream host</p>
-                  <p class="mt-2 break-all">{{ playback.streamHost.value }}</p>
-                </div>
-                <div class="rounded-2xl border border-white/10 bg-white/6 p-3 text-sm text-white/70">
-                  <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">Stream type</p>
-                  <p class="mt-2">{{ playback.streamTypeGuess.value }}</p>
-                </div>
-                <div class="rounded-2xl border border-white/10 bg-white/6 p-3 text-sm text-white/70">
-                  <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">Playback path</p>
-                  <p class="mt-2">
-                    {{
-                      playback.currentEpisode.value?.is_hls_like
-                        ? playback.nativeHlsSupported.value
-                          ? 'Native HLS'
-                          : playback.hlsJsSupported.value
-                            ? 'hls.js'
-                            : 'Unsupported'
-                        : 'Native video'
-                    }}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div class="mt-4 grid gap-3">
-              <article
-                v-for="group in detail.play_sources"
-                :key="group.source_name"
-                class="rounded-[1.25rem] border border-white/10 bg-white/6 p-4"
-              >
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <h4 class="text-sm font-semibold text-white">{{ group.source_name }}</h4>
-                  <div class="flex flex-wrap gap-2 text-xs text-white/60">
-                    <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1">{{ group.episode_count }} episodes</span>
-                    <span class="rounded-full border border-white/10 bg-black/18 px-3 py-1">{{ group.has_play_urls ? 'URLs stored' : 'No URLs' }}</span>
-                  </div>
-                </div>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <span
-                    v-for="episode in group.sample_episode_names"
-                    :key="episode"
-                    class="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-xs text-white/64"
-                  >
-                    {{ episode }}
-                  </span>
-                </div>
-                <div class="mt-4 flex flex-wrap gap-2">
-                  <NButton
-                    v-for="(episodeName, episodeIndex) in group.episode_names"
-                    :key="`${group.source_name}-${episodeIndex}-${episodeName}`"
-                    round
-                    secondary
-                    size="small"
-                    :loading="episodeLoadingKey === `${group.source_name}:${episodeIndex}`"
-                    @click="playEpisode(group.source_name, episodeIndex)"
-                  >
-                    {{ episodeName }}
-                  </NButton>
-                </div>
-              </article>
-              <p v-if="detail.play_sources.length === 0" class="text-sm text-white/54">
-                No play source groups were returned by the collector.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
+    <VodDetailPanel
+      :detail="detail"
+      :detail-title="detailTitle"
+      :detail-loading="detailLoading"
+      :detail-error="detailError"
+      :episode-loading-key="episodeLoadingKey"
+      :episode-error="episodeError"
+      :playback="playback"
+      @close="closeDetail"
+      @play-episode="playEpisode"
+    />
   </section>
 </template>

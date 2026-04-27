@@ -236,3 +236,5 @@ export function useVodPlayback() {
     handleVolumeChange,
   }
 }
+
+export type VodPlayback = ReturnType<typeof useVodPlayback>
