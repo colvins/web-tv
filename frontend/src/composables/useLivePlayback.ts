@@ -4,16 +4,34 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { LiveChannel } from '@/api/sourceConfigs'
 
 export type PlaybackState = 'idle' | 'loading' | 'ready' | 'error'
+export type PlaybackErrorCategory =
+  | 'autoplay_blocked'
+  | 'unsupported_format'
+  | 'hls_manifest_error'
+  | 'hls_network_error'
+  | 'hls_media_error'
+  | 'native_media_error'
+  | 'stream_load_error'
+  | 'unknown_error'
 
 type FullscreenCapableVideo = HTMLVideoElement & {
   webkitEnterFullscreen?: () => void
   webkitDisplayingFullscreen?: boolean
 }
 
+type PlaybackErrorInfo = {
+  category: PlaybackErrorCategory
+  message: string
+  technicalReason: string
+  detail?: string
+}
+
 export function useLivePlayback() {
   const selectedChannel = ref<LiveChannel | null>(null)
   const playbackState = ref<PlaybackState>('idle')
   const playbackError = ref('')
+  const playbackErrorCategory = ref<PlaybackErrorCategory | null>(null)
+  const playbackErrorTechnical = ref('')
   const isPlaying = ref(false)
   const isMuted = ref(false)
   const isFullscreen = ref(false)
@@ -25,6 +43,7 @@ export function useLivePlayback() {
 
   let hls: Hls | null = null
   let controlsHideTimer: number | undefined
+  let hlsMediaRecoveryAttempted = false
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
   const shouldPinControlsVisible = computed(() =>
@@ -81,6 +100,7 @@ export function useLivePlayback() {
     clearControlsHideTimer()
     hls?.destroy()
     hls = null
+    hlsMediaRecoveryAttempted = false
 
     const video = videoEl.value
     if (!video) return
@@ -89,12 +109,159 @@ export function useLivePlayback() {
     video.load()
   }
 
-  function setPlaybackError(description: string) {
+  function getStreamHost(streamUrl: string | null | undefined) {
+    if (!streamUrl) return 'unknown-host'
+
+    try {
+      return new URL(streamUrl).host || 'unknown-host'
+    } catch {
+      return 'unknown-host'
+    }
+  }
+
+  function logPlaybackFailure(error: PlaybackErrorInfo) {
+    console.warn('[live-playback]', {
+      channel: selectedChannel.value?.name ?? 'unknown-channel',
+      host: getStreamHost(selectedChannel.value?.stream_url),
+      category: error.category,
+      technicalReason: error.technicalReason,
+      detail: error.detail ?? '',
+    })
+  }
+
+  function setPlaybackError(error: PlaybackErrorInfo) {
     playbackState.value = 'error'
-    playbackError.value = description
-    playerStatusText.value = description
+    playbackError.value = error.message
+    playbackErrorCategory.value = error.category
+    playbackErrorTechnical.value = error.technicalReason
+    playerStatusText.value = error.message
     isPlaying.value = false
+    logPlaybackFailure(error)
     revealControls()
+  }
+
+  function clearPlaybackError() {
+    playbackError.value = ''
+    playbackErrorCategory.value = null
+    playbackErrorTechnical.value = ''
+  }
+
+  function buildPlaybackError(category: PlaybackErrorCategory, detail?: string): PlaybackErrorInfo {
+    switch (category) {
+      case 'autoplay_blocked':
+        return {
+          category,
+          message: 'Playback failed: autoplay was blocked. Tap play to start the channel.',
+          technicalReason: 'Autoplay blocked by browser policy.',
+          detail,
+        }
+      case 'unsupported_format':
+        return {
+          category,
+          message: 'Playback failed: browser does not support this stream format.',
+          technicalReason: 'Stream format is not supported in this browser.',
+          detail,
+        }
+      case 'hls_manifest_error':
+        return {
+          category,
+          message: 'Playback failed: HLS manifest could not be loaded.',
+          technicalReason: 'HLS manifest load error.',
+          detail,
+        }
+      case 'hls_network_error':
+        return {
+          category,
+          message: 'Playback failed: network error while loading the stream.',
+          technicalReason: 'HLS network error.',
+          detail,
+        }
+      case 'hls_media_error':
+        return {
+          category,
+          message: 'Playback failed: media decode error.',
+          technicalReason: 'HLS media error.',
+          detail,
+        }
+      case 'native_media_error':
+        return {
+          category,
+          message: 'Playback failed: browser media playback error.',
+          technicalReason: 'Native media element error.',
+          detail,
+        }
+      case 'stream_load_error':
+        return {
+          category,
+          message: 'Playback failed: could not load this channel stream.',
+          technicalReason: 'Stream load failed.',
+          detail,
+        }
+      case 'unknown_error':
+      default:
+        return {
+          category: 'unknown_error',
+          message: 'Playback failed: unknown playback error.',
+          technicalReason: 'Unknown playback error.',
+          detail,
+        }
+    }
+  }
+
+  function classifyHlsError(data: {
+    details?: string
+    fatal?: boolean
+    error?: unknown
+    networkDetails?: unknown
+    response?: { code?: number; text?: string }
+  }): PlaybackErrorInfo {
+    const detailParts = [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
+      .filter(Boolean)
+      .join(' | ')
+
+    switch (data.details) {
+      case Hls.ErrorDetails.MANIFEST_LOAD_ERROR:
+      case Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT:
+      case Hls.ErrorDetails.MANIFEST_PARSING_ERROR:
+      case Hls.ErrorDetails.MANIFEST_INCOMPATIBLE_CODECS_ERROR:
+        return buildPlaybackError('hls_manifest_error', detailParts)
+      case Hls.ErrorDetails.LEVEL_LOAD_ERROR:
+      case Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT:
+      case Hls.ErrorDetails.AUDIO_TRACK_LOAD_ERROR:
+      case Hls.ErrorDetails.AUDIO_TRACK_LOAD_TIMEOUT:
+      case Hls.ErrorDetails.FRAG_LOAD_ERROR:
+      case Hls.ErrorDetails.FRAG_LOAD_TIMEOUT:
+      case Hls.ErrorDetails.KEY_LOAD_ERROR:
+      case Hls.ErrorDetails.KEY_LOAD_TIMEOUT:
+        return buildPlaybackError('hls_network_error', detailParts)
+      case Hls.ErrorDetails.BUFFER_APPEND_ERROR:
+      case Hls.ErrorDetails.BUFFER_APPENDING_ERROR:
+      case Hls.ErrorDetails.FRAG_DECRYPT_ERROR:
+      case Hls.ErrorDetails.FRAG_PARSING_ERROR:
+      case Hls.ErrorDetails.BUFFER_STALLED_ERROR:
+      case Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE:
+        return buildPlaybackError('hls_media_error', detailParts)
+      default:
+        if (data.networkDetails) {
+          return buildPlaybackError('hls_network_error', detailParts || 'Network request failed')
+        }
+        return buildPlaybackError(data.fatal ? 'stream_load_error' : 'unknown_error', detailParts)
+    }
+  }
+
+  function classifyNativeVideoError(error: MediaError | null): PlaybackErrorInfo {
+    switch (error?.code) {
+      case MediaError.MEDIA_ERR_ABORTED:
+        return buildPlaybackError('stream_load_error', 'MEDIA_ERR_ABORTED')
+      case MediaError.MEDIA_ERR_NETWORK:
+        return buildPlaybackError('stream_load_error', 'MEDIA_ERR_NETWORK')
+      case MediaError.MEDIA_ERR_DECODE:
+        return buildPlaybackError('native_media_error', 'MEDIA_ERR_DECODE')
+      case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+        return buildPlaybackError('unsupported_format', 'MEDIA_ERR_SRC_NOT_SUPPORTED')
+      default:
+        return buildPlaybackError('unknown_error', error?.message || 'Unknown media element error')
+    }
   }
 
   async function attemptPlay() {
@@ -105,9 +272,15 @@ export function useLivePlayback() {
 
     try {
       await video.play()
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        setPlaybackError(buildPlaybackError('autoplay_blocked', error.name))
+        return
+      }
+
       playbackState.value = 'ready'
       playerStatusText.value = 'Ready to play.'
+      clearPlaybackError()
       isPlaying.value = false
       revealControls()
     }
@@ -120,7 +293,7 @@ export function useLivePlayback() {
     destroyPlayer()
     selectedChannel.value = { ...channel }
     playbackState.value = 'loading'
-    playbackError.value = ''
+    clearPlaybackError()
     playerStatusText.value = 'Loading stream...'
     controlsVisible.value = true
     video.muted = isMuted.value
@@ -144,14 +317,39 @@ export function useLivePlayback() {
           void attemptPlay()
         })
         hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
+            playbackState.value = 'loading'
+            playerStatusText.value = 'Buffering stream...'
+            revealControls()
+            return
+          }
+
+          if (data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR && data.fatal && !hlsMediaRecoveryAttempted) {
+            hlsMediaRecoveryAttempted = true
+            playerStatusText.value = 'Recovering stream...'
+            playbackState.value = 'loading'
+            revealControls()
+            hls?.recoverMediaError()
+            return
+          }
+
+          if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
+            hlsMediaRecoveryAttempted = true
+            playerStatusText.value = 'Recovering stream...'
+            playbackState.value = 'loading'
+            revealControls()
+            hls?.recoverMediaError()
+            return
+          }
+
           if (data.fatal) {
-            setPlaybackError('Unable to play this HLS stream.')
+            setPlaybackError(classifyHlsError(data))
           }
         })
         return
       }
 
-      setPlaybackError('HLS playback is not supported in this browser.')
+      setPlaybackError(buildPlaybackError('unsupported_format', 'HLS playback not supported'))
       return
     }
 
@@ -242,6 +440,7 @@ export function useLivePlayback() {
   function handleCanPlay() {
     if (playbackState.value === 'error') return
     playbackState.value = 'ready'
+    clearPlaybackError()
     if (!isPlaying.value) {
       playerStatusText.value = 'Ready to play.'
     }
@@ -249,7 +448,7 @@ export function useLivePlayback() {
   }
 
   function handleVideoError() {
-    setPlaybackError('Unable to load this channel stream.')
+    setPlaybackError(classifyNativeVideoError(videoEl.value?.error ?? null))
   }
 
   function handleVolumeChange() {
@@ -310,6 +509,8 @@ export function useLivePlayback() {
     selectedChannelId,
     playbackState,
     playbackError,
+    playbackErrorCategory,
+    playbackErrorTechnical,
     isPlaying,
     isMuted,
     isFullscreen,

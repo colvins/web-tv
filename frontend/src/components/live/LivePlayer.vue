@@ -1,12 +1,36 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { LoaderCircle, Maximize, Pause, Play, Tv, Volume2, VolumeX } from 'lucide-vue-next'
 
 import type { LivePlayback } from '@/composables/useLivePlayback'
 
-defineProps<{
+const props = defineProps<{
   playback: LivePlayback
   compact?: boolean
 }>()
+
+const errorBadgeText = computed(() => {
+  switch (props.playback.playbackErrorCategory.value) {
+    case 'autoplay_blocked':
+      return 'Autoplay blocked'
+    case 'unsupported_format':
+      return 'Unsupported format'
+    case 'hls_manifest_error':
+      return 'Manifest error'
+    case 'hls_network_error':
+      return 'Network error'
+    case 'hls_media_error':
+      return 'Media error'
+    case 'native_media_error':
+      return 'Browser media error'
+    case 'stream_load_error':
+      return 'Stream load error'
+    case 'unknown_error':
+      return 'Unknown error'
+    default:
+      return 'Playback error'
+  }
+})
 </script>
 
 <template>
@@ -126,6 +150,18 @@ defineProps<{
           <p class="max-w-2xl text-sm leading-6 text-white/72 drop-shadow">
             {{ playback.playbackState.value === 'error' ? playback.playbackError.value : playback.playerStatusText.value }}
           </p>
+
+          <div
+            v-if="playback.playbackState.value === 'error'"
+            class="flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-rose-400/22 bg-rose-500/10 px-3 py-2 text-xs text-rose-100/92 shadow-[0_12px_32px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+          >
+            <span class="rounded-full border border-rose-300/24 bg-rose-400/12 px-2 py-0.5 uppercase tracking-[0.2em] text-[10px]">
+              {{ errorBadgeText }}
+            </span>
+            <span class="text-rose-50/78">
+              {{ playback.playbackErrorTechnical.value }}
+            </span>
+          </div>
 
           <div class="flex w-fit max-w-full items-center gap-3 rounded-full">
             <button
