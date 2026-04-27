@@ -373,12 +373,10 @@ watch(
       :loading="loading"
       :source-loading="sourceLoading"
       :search-loading="searchLoading"
-      :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
       @refresh="bootstrap"
       @update:selected-source-id="onSourceChange"
       @update:search-query="(value) => (searchQuery = value)"
       @search="runSearch(1)"
-      @reset="selectCategory(null)"
     />
   </Teleport>
 

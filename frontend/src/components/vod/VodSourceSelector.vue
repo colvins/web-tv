@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { RefreshCw, Search, Settings } from 'lucide-vue-next'
+import { RefreshCw, Search } from 'lucide-vue-next'
 import { NButton, NInput, NSelect } from 'naive-ui'
-import { RouterLink } from 'vue-router'
 
 withDefaults(defineProps<{
   sourceOptions: Array<{ label: string; value: string }>
@@ -10,7 +9,6 @@ withDefaults(defineProps<{
   loading: boolean
   sourceLoading: boolean
   searchLoading: boolean
-  hasSearchFilter: boolean
   compact?: boolean
 }>(), {
   compact: false,
@@ -21,7 +19,6 @@ const emit = defineEmits<{
   'update:selectedSourceId': [value: string | null]
   'update:searchQuery': [value: string]
   search: []
-  reset: []
 }>()
 </script>
 
@@ -50,21 +47,10 @@ const emit = defineEmits<{
           <template #icon><Search class="h-4 w-4" /></template>
           Search
         </NButton>
-        <NButton round secondary :disabled="!hasSearchFilter" @click="emit('reset')">
-          Reset
-        </NButton>
       </div>
     </div>
 
     <div class="flex items-center gap-2" :class="compact ? 'justify-end' : 'justify-start xl:justify-end'">
-      <RouterLink
-        to="/settings/sources"
-        class="tv-focus-card inline-flex min-h-11 items-center rounded-full border border-white/10 bg-white/6 px-4 text-sm text-white/82 transition hover:bg-white/10"
-      >
-        <Settings class="mr-2 h-4 w-4" aria-hidden="true" />
-        <span :class="compact ? 'hidden sm:inline' : ''">Source Settings</span>
-        <span v-if="compact" class="sm:hidden">Settings</span>
-      </RouterLink>
       <NButton quaternary circle :loading="loading || sourceLoading" @click="emit('refresh')">
         <template #icon><RefreshCw class="h-4 w-4" /></template>
       </NButton>
