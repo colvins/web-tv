@@ -32,7 +32,7 @@ const pageTitle = computed(() => {
   if (isVodCatalogRoute.value) {
     return vodPageHeaderTitle.value || 'VOD'
   }
-  return String(route.meta.title ?? 'web-tv')
+  return String(route.meta.title ?? 'Lets.TV')
 })
 
 function isNavItemActive(path: string) {
@@ -52,10 +52,10 @@ function isNavItemActive(path: string) {
       <RouterLink
         to="/"
         class="mb-8 flex h-14 w-14 items-center justify-center rounded-3xl bg-white text-lg font-black text-cinema-950 xl:w-full xl:justify-start xl:px-5"
-        aria-label="web-tv home"
+        aria-label="Lets.TV home"
       >
         <span>TV</span>
-        <span class="ml-3 hidden text-base xl:inline">web-tv</span>
+        <span class="ml-3 hidden text-base xl:inline">Lets.TV</span>
       </RouterLink>
 
       <nav class="flex w-full flex-1 flex-col gap-3">
@@ -78,7 +78,7 @@ function isNavItemActive(path: string) {
         :class="isVodCatalogRoute ? 'sm:flex-row sm:items-start sm:justify-between' : 'sm:flex-row sm:items-center sm:justify-between'"
       >
         <div class="min-w-0 w-full sm:w-auto">
-          <p class="text-sm uppercase tracking-[0.32em] text-white/42">web-tv</p>
+          <p class="text-sm uppercase tracking-[0.32em] text-white/42">Lets.TV</p>
           <div
             v-if="isVodCatalogRoute"
             class="mt-2 flex items-start justify-between gap-3 sm:block"
