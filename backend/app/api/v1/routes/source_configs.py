@@ -8,8 +8,9 @@ from app.schemas.source_config import SourceConfigCreate, SourceConfigRead, Sour
 from app.schemas.import_job import ImportJobRead
 from app.schemas.live import LiveExtractionStats
 from app.schemas.source_snapshot import SourceSnapshotRead
+from app.schemas.vod_capability_analysis import VodCapabilityAnalysisRead
 from app.schemas.vod_site import VodSiteRead
-from app.services import import_jobs, live_m3u, source_configs, source_snapshots, vod_sites
+from app.services import import_jobs, live_m3u, source_configs, source_snapshots, vod_capability_analysis, vod_sites
 
 router = APIRouter(prefix="/configs", tags=["source-configs"])
 
@@ -66,6 +67,14 @@ async def extract_live_channels(config_id: uuid.UUID, db: AsyncSession = Depends
 async def get_latest_snapshot(config_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> SourceSnapshotRead:
     snapshot = await source_snapshots.require_latest_source_snapshot(db, config_id)
     return source_snapshots.serialize_source_snapshot(snapshot)
+
+
+@router.get("/{config_id}/vod-capability-analysis/latest", response_model=VodCapabilityAnalysisRead | None)
+async def get_latest_vod_capability_analysis(
+    config_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> VodCapabilityAnalysisRead | None:
+    return await vod_capability_analysis.latest_vod_capability_analysis(db, config_id)
 
 
 @router.get("/{config_id}/vod-sites", response_model=list[VodSiteRead])
