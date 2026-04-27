@@ -6,6 +6,8 @@ import VodCatalogGrid from '@/components/vod/VodCatalogGrid.vue'
 import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
 
 defineProps<{
+  currentSourceName: string
+  currentSiteName: string
   pageLabel: string
   loadError: string | null
   loading: boolean
@@ -49,6 +51,13 @@ const emit = defineEmits<{
 
     <template v-else>
       <article class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
+        <div class="grid gap-2">
+          <p class="text-sm uppercase tracking-[0.28em] text-white/38">Current source</p>
+          <div class="flex flex-col gap-1">
+            <h2 class="text-2xl font-semibold text-white sm:text-3xl">{{ currentSourceName }}</h2>
+            <p class="text-sm text-white/52">{{ currentSiteName }}</p>
+          </div>
+        </div>
         <VodCategoryChips
           :categories="categories"
           :selected-category-id="selectedCategoryId"
@@ -70,7 +79,7 @@ const emit = defineEmits<{
       <div class="max-w-3xl">
         <p class="text-sm uppercase tracking-[0.28em] text-white/42">No source selected</p>
         <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">Choose a VOD source to begin browsing</h2>
-        <p class="mt-5 text-base leading-7 text-white/58">Pick a source from the selector to open its catalog.</p>
+        <p class="mt-5 text-base leading-7 text-white/58">Enable a source with catalog data to open its catalog.</p>
       </div>
     </div>
 

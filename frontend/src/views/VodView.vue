@@ -45,15 +45,6 @@ const isDesktopLayout = ref(true)
 
 let mediaQuery: MediaQueryList | undefined
 
-const sourceOptions = computed(() =>
-  sources.value
-    .filter((source) => source.enabled && source.vod_site_count > 0)
-    .map((source) => ({
-      label: `${source.name} · ${source.vod_site_count} VOD source${source.vod_site_count > 1 ? 's' : ''}`,
-      value: source.id,
-    })),
-)
-
 const selectedSource = computed(
   () => sources.value.find((source) => source.id === selectedSourceId.value) ?? null,
 )
@@ -310,27 +301,10 @@ async function changePage(direction: -1 | 1) {
   })
 }
 
-function onSourceChange(value: string | null) {
-  if (!value) {
-    void router.replace({ name: 'vod', query: {} })
-    return
-  }
-  void router.replace({
-    name: 'vod',
-    query: buildVodCatalogQuery({
-      sourceId: value,
-      siteKey: null,
-      categoryId: null,
-      query: '',
-      page: 1,
-    }),
-  })
-}
-
 watch(
-  headerSourceName,
-  (value) => {
-    vodPageHeaderTitle.value = value || 'VOD'
+  () => route.name,
+  () => {
+    vodPageHeaderTitle.value = 'VOD'
   },
   { immediate: true },
 )
@@ -367,14 +341,11 @@ watch(
   <Teleport to="#vod-page-toolbar">
     <VodSourceSelector
       :compact="!isDesktopLayout"
-      :source-options="sourceOptions"
-      :selected-source-id="selectedSourceId"
       :search-query="searchQuery"
       :loading="loading"
       :source-loading="sourceLoading"
       :search-loading="searchLoading"
       @refresh="bootstrap"
-      @update:selected-source-id="onSourceChange"
       @update:search-query="(value) => (searchQuery = value)"
       @search="runSearch(1)"
     />
@@ -382,6 +353,8 @@ watch(
 
   <VodDesktopLayout
     v-if="isDesktopLayout"
+    :current-source-name="headerSourceName"
+    :current-site-name="headerSiteName"
     :page-label="pageLabel"
     :load-error="loadError"
     :loading="loading"
@@ -404,6 +377,8 @@ watch(
 
   <VodMobileLayout
     v-else
+    :current-source-name="headerSourceName"
+    :current-site-name="headerSiteName"
     :page-label="pageLabel"
     :load-error="loadError"
     :loading="loading"

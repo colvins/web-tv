@@ -6,6 +6,8 @@ import VodCatalogGrid from '@/components/vod/VodCatalogGrid.vue'
 import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
 
 defineProps<{
+  currentSourceName: string
+  currentSiteName: string
   pageLabel: string
   loadError: string | null
   loading: boolean
@@ -48,6 +50,11 @@ const emit = defineEmits<{
 
     <template v-else>
       <article class="glass-panel rounded-[1.5rem] p-4">
+        <div class="grid gap-1.5">
+          <p class="text-[0.68rem] uppercase tracking-[0.22em] text-white/38">当前源</p>
+          <h2 class="text-xl font-semibold text-white">{{ currentSourceName }}</h2>
+          <p class="text-xs text-white/52">{{ currentSiteName }}</p>
+        </div>
         <VodCategoryChips
           compact
           :categories="categories"
