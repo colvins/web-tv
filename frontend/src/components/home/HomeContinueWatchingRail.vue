@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 import type { RecentVodPlaybackItem } from '@/stores/app'
@@ -11,15 +10,9 @@ const props = defineProps<{
   items: RecentVodPlaybackItem[]
 }>()
 
-const router = useRouter()
 const railRef = ref<HTMLElement | null>(null)
 const canScrollLeft = ref(false)
 const canScrollRight = ref(false)
-const isDragging = ref(false)
-const dragMoved = ref(false)
-const dragStartX = ref(0)
-const dragStartScrollLeft = ref(0)
-const dragThreshold = 6
 
 const sortedItems = computed(() =>
   [...props.items].sort((left, right) => new Date(right.watchedAt).getTime() - new Date(left.watchedAt).getTime()),
@@ -58,40 +51,6 @@ function scrollByCard(direction: -1 | 1) {
     left: direction * (cardWidth + 20),
     behavior: 'smooth',
   })
-}
-
-function onPointerDown(event: PointerEvent) {
-  if (event.pointerType !== 'mouse' || event.button !== 0 || !railRef.value) return
-
-  isDragging.value = true
-  dragMoved.value = false
-  dragStartX.value = event.clientX
-  dragStartScrollLeft.value = railRef.value.scrollLeft
-  railRef.value.setPointerCapture(event.pointerId)
-}
-
-function onPointerMove(event: PointerEvent) {
-  if (!isDragging.value || !railRef.value) return
-
-  if (Math.abs(event.clientX - dragStartX.value) > dragThreshold) {
-    dragMoved.value = true
-  }
-  event.preventDefault()
-  railRef.value.scrollLeft = dragStartScrollLeft.value - (event.clientX - dragStartX.value)
-}
-
-function stopDragging(event: PointerEvent) {
-  if (!railRef.value || !isDragging.value) return
-
-  isDragging.value = false
-  if (railRef.value.hasPointerCapture(event.pointerId)) {
-    railRef.value.releasePointerCapture(event.pointerId)
-  }
-}
-
-function openDetail(item: RecentVodPlaybackItem) {
-  if (dragMoved.value) return
-  void router.push(detailLocation(item))
 }
 
 onMounted(async () => {
@@ -158,21 +117,14 @@ watch(
       <div
         ref="railRef"
         class="continue-scroll flex gap-5 overflow-x-auto pb-5 [scrollbar-width:none]"
-        :class="isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'"
         @scroll="updateScrollState"
-        @pointerdown="onPointerDown"
-        @pointermove="onPointerMove"
-        @pointerup="stopDragging"
-        @pointercancel="stopDragging"
-        @pointerleave="stopDragging"
       >
-        <button
+        <RouterLink
           v-for="item in sortedItems"
           :key="`${item.sourceConfigId}-${item.vodId}`"
-          type="button"
+          :to="detailLocation(item)"
           data-rail-card
-          class="tv-focus-card glass-panel block min-w-[12rem] overflow-hidden rounded-[1.75rem] border border-white/10 p-3 text-left sm:min-w-[14rem] sm:max-w-[16rem]"
-          @click="openDetail(item)"
+          class="tv-focus-card glass-panel block min-w-[12rem] overflow-hidden rounded-[1.75rem] border border-white/10 p-3 sm:min-w-[14rem] sm:max-w-[16rem]"
         >
           <VodPoster
             :src="item.poster"
@@ -189,7 +141,7 @@ watch(
               <span v-if="item.year" class="rounded-full border border-white/10 bg-white/6 px-2.5 py-1">{{ item.year }}</span>
             </div>
           </div>
-        </button>
+        </RouterLink>
       </div>
     </div>
   </section>
