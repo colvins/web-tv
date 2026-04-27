@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { Maximize2 } from 'lucide-vue-next'
+import { NButton } from 'naive-ui'
+
 import type { VodPlayback } from '@/composables/useVodPlayback'
 
 withDefaults(defineProps<{
@@ -16,7 +19,23 @@ withDefaults(defineProps<{
     :class="compact ? 'rounded-[1.25rem]' : 'mt-4 rounded-[1.5rem]'"
     data-vod-player-shell
   >
-    <div class="relative aspect-video bg-black">
+    <div class="flex items-center justify-between gap-3 border-b border-white/10 bg-black/24" :class="compact ? 'px-3 py-3' : 'px-4 py-3'">
+      <h4 class="min-w-0 truncate font-semibold text-white" :class="compact ? 'text-base' : 'text-lg'">
+        {{ playback.currentEpisode.value?.episode_name ?? '请选择剧集' }}
+      </h4>
+      <NButton
+        round
+        secondary
+        :disabled="!playback.currentEpisode.value"
+        class="min-h-11 min-w-11 shrink-0"
+        @click="playback.toggleFullscreen"
+      >
+        <template #icon><Maximize2 class="h-4 w-4" /></template>
+        全屏
+      </NButton>
+    </div>
+
+    <div class="aspect-video bg-black">
       <video
         :ref="playback.setVideoElement"
         class="h-full w-full bg-black object-contain"
@@ -31,14 +50,9 @@ withDefaults(defineProps<{
         @volumechange="playback.handleVolumeChange"
         @waiting="playback.handleWaiting"
       ></video>
-      <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/30 to-transparent" :class="compact ? 'p-3' : 'p-4'">
-        <h4 class="truncate font-semibold text-white" :class="compact ? 'text-base' : 'text-lg'">
-          {{ playback.currentEpisode.value?.episode_name ?? '请选择剧集' }}
-        </h4>
-        <p v-if="episodeError || playback.errorMessage.value" class="mt-2 text-red-100" :class="compact ? 'text-[11px]' : 'text-xs'">
-          {{ episodeError ?? playback.errorMessage.value }}
-        </p>
-      </div>
+    </div>
+    <div v-if="episodeError || playback.errorMessage.value" class="border-t border-red-300/18 bg-red-400/10 text-red-100" :class="compact ? 'px-3 py-2 text-[11px]' : 'px-4 py-3 text-xs'">
+      {{ episodeError ?? playback.errorMessage.value }}
     </div>
   </div>
 </template>

@@ -17,6 +17,7 @@ export type VodEpisodePlay = {
 
 type FullscreenCapableVideo = HTMLVideoElement & {
   webkitEnterFullscreen?: () => void
+  webkitRequestFullscreen?: () => Promise<void> | void
   webkitDisplayingFullscreen?: boolean
 }
 
@@ -158,27 +159,32 @@ export function useVodPlayback() {
     const container = video?.closest('[data-vod-player-shell]') as HTMLElement | null
     if (!video || !container) return
 
-    if (document.fullscreenElement) {
-      await document.exitFullscreen()
-      return
-    }
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+        return
+      }
 
-    const isLikelyIos =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+      if (typeof video.webkitEnterFullscreen === 'function') {
+        video.webkitEnterFullscreen()
+        return
+      }
 
-    if (isLikelyIos && typeof video.webkitEnterFullscreen === 'function') {
-      video.webkitEnterFullscreen()
-      return
-    }
+      if (typeof container.requestFullscreen === 'function') {
+        await container.requestFullscreen()
+        return
+      }
 
-    if (typeof container.requestFullscreen === 'function') {
-      await container.requestFullscreen()
-      return
-    }
+      if (typeof video.requestFullscreen === 'function') {
+        await video.requestFullscreen()
+        return
+      }
 
-    if (typeof video.requestFullscreen === 'function') {
-      await video.requestFullscreen()
+      if (typeof video.webkitRequestFullscreen === 'function') {
+        await video.webkitRequestFullscreen()
+      }
+    } catch (error) {
+      console.warn('Unable to enter VOD fullscreen mode', error)
     }
   }
 
