@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ChevronRight, Settings } from 'lucide-vue-next'
 
 import type { VodBrowseItem } from '@/api/sourceConfigs'
 import VodPoster from '@/components/vod/VodPoster.vue'
@@ -9,8 +8,6 @@ import { buildVodCatalogQuery } from '@/utils/vodRouteState'
 const props = defineProps<{
   sourceConfigId: string | null
   siteKey: string | null
-  sourceName: string | null
-  siteName: string | null
   items: VodBrowseItem[]
   loading: boolean
 }>()
@@ -121,41 +118,8 @@ watch(
 
 <template>
   <section class="relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(225,90,65,0.24),transparent_36%),radial-gradient(circle_at_bottom_right,rgba(67,116,255,0.22),transparent_34%),linear-gradient(135deg,rgba(7,9,16,0.96),rgba(15,18,28,0.88))] shadow-[0_32px_100px_rgba(0,0,0,0.34)]">
-    <div class="absolute inset-0 bg-[linear-gradient(90deg,rgba(3,5,10,0.92)_0%,rgba(3,5,10,0.76)_34%,rgba(3,5,10,0.34)_62%,rgba(3,5,10,0.7)_100%)]"></div>
-    <div class="relative grid min-h-[24rem] gap-8 p-6 sm:p-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)] lg:items-end lg:p-10 xl:min-h-[28rem]">
-      <div class="relative z-10 flex flex-col justify-end">
-        <p class="text-sm uppercase tracking-[0.28em] text-white/46">Watch Now</p>
-        <h2 class="mt-3 max-w-xl text-4xl font-semibold text-white sm:text-5xl xl:text-6xl">
-          {{ sourceName ?? 'Choose a VOD source to fill the home screen.' }}
-        </h2>
-        <p class="mt-4 max-w-xl text-sm leading-7 text-white/68 sm:text-base">
-          {{
-            sourceName
-              ? `Latest posters from ${siteName ?? sourceName} rotate here automatically.`
-              : 'Set a current VOD site in Settings to surface the newest movie and series posters here.'
-          }}
-        </p>
-        <div class="mt-6 flex flex-wrap gap-3">
-          <RouterLink
-            v-if="sourceName"
-            to="/vod"
-            class="tv-focus-card inline-flex min-h-12 items-center rounded-full bg-white px-5 py-3 text-sm font-semibold text-cinema-950 transition hover:bg-white/92"
-          >
-            Open VOD
-            <ChevronRight class="ml-2 h-4 w-4" />
-          </RouterLink>
-          <RouterLink
-            v-else
-            to="/settings/sources"
-            class="tv-focus-card inline-flex min-h-12 items-center rounded-full border border-white/14 bg-white/8 px-5 py-3 text-sm font-medium text-white/86 transition hover:bg-white/12"
-          >
-            Configure sources
-            <Settings class="ml-2 h-4 w-4" />
-          </RouterLink>
-        </div>
-      </div>
-
-      <div ref="gridRef" class="relative z-10 overflow-hidden rounded-[2rem] border border-white/10 bg-black/18 p-3 backdrop-blur-xl">
+    <div class="relative min-h-[24rem] p-4 sm:p-6 xl:min-h-[28rem]">
+      <div ref="gridRef" class="relative z-10 h-full overflow-hidden rounded-[2rem] border border-white/10 bg-black/18 p-3 backdrop-blur-xl">
         <div v-if="loading" class="grid gap-3" :style="{ gridTemplateColumns: `repeat(${itemsPerSlide}, minmax(0, 1fr))` }">
           <div
             v-for="index in itemsPerSlide"

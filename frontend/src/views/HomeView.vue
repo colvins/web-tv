@@ -53,8 +53,6 @@ onMounted(() => {
     <HomeHeroCarousel
       :source-config-id="currentVodSite?.source_config_id ?? null"
       :site-key="currentVodSite?.site_key ?? null"
-      :source-name="currentVodSite?.source_name ?? null"
-      :site-name="currentVodSite?.site_name ?? null"
       :items="latestItems"
       :loading="heroLoading"
     />
