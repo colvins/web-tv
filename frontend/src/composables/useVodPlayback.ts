@@ -1,5 +1,5 @@
 import Hls from 'hls.js'
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 export type VodPlaybackState = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -240,8 +240,10 @@ export function useVodPlayback() {
     isFullscreen.value = !!document.fullscreenElement || !!webkitFullscreenElement || !!video?.webkitDisplayingFullscreen
   }
 
-  document.addEventListener('fullscreenchange', syncFullscreenState)
-  document.addEventListener('webkitfullscreenchange', syncFullscreenState as EventListener)
+  onMounted(() => {
+    document.addEventListener('fullscreenchange', syncFullscreenState)
+    document.addEventListener('webkitfullscreenchange', syncFullscreenState as EventListener)
+  })
 
   onBeforeUnmount(() => {
     destroyPlayer()

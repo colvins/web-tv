@@ -50,12 +50,12 @@ class ParsedChannel:
 async def extract_live_channels(db: AsyncSession, source_config_id: uuid.UUID) -> dict[str, Any]:
     await get_source_config(db, source_config_id)
     snapshot = await _latest_snapshot(db, source_config_id)
-    latest_job = await _latest_successful_import(db, source_config_id)
     if snapshot is None or not isinstance(snapshot.root_config, dict) or snapshot.recovered_format not in SUPPORTED_SNAPSHOT_FORMATS:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Latest successful import does not have a stored M3U snapshot; import the source again",
         )
+    latest_job = await _latest_successful_import(db, source_config_id)
 
     raw_m3u = snapshot.root_config.get("raw_m3u")
     if not isinstance(raw_m3u, str):
