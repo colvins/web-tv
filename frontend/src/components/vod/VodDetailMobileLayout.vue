@@ -6,7 +6,6 @@ import type { VodBrowseDetailResponse } from '@/api/sourceConfigs'
 import type { VodPlayback } from '@/composables/useVodPlayback'
 import VodEpisodeList from '@/components/vod/VodEpisodeList.vue'
 import VodPlayer from '@/components/vod/VodPlayer.vue'
-import VodPoster from '@/components/vod/VodPoster.vue'
 
 defineProps<{
   detail: VodBrowseDetailResponse | null
@@ -68,24 +67,8 @@ const emit = defineEmits<{
 
     <template v-else-if="detail">
       <article class="glass-panel rounded-[1.5rem] p-4">
-        <p class="text-xs uppercase tracking-[0.16em] text-white/40">播放</p>
-        <VodPlayer
-          compact
-          :playback="playback"
-          :episode-error="episodeError"
-          title="播放"
-          :subtitle="null"
-        />
-      </article>
-
-      <article class="glass-panel rounded-[1.5rem] p-4">
-        <div class="flex items-center justify-between gap-3">
-          <p class="text-xs uppercase tracking-[0.16em] text-white/40">选集</p>
-          <span class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[11px] text-white/54">
-            {{ detail.play_sources.length }} 个线路
-          </span>
-        </div>
-        <div class="mt-3">
+        <VodPlayer compact :playback="playback" :episode-error="episodeError" />
+        <div class="mt-3 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
           <VodEpisodeList
             compact
             :play-sources="detail.play_sources"
@@ -94,34 +77,6 @@ const emit = defineEmits<{
             :selected-episode-index="playback.currentEpisode.value?.episode_index ?? null"
             @play-episode="(sourceName, episodeIndex) => emit('playEpisode', sourceName, episodeIndex)"
           />
-        </div>
-      </article>
-
-      <article class="glass-panel rounded-[1.5rem] p-4">
-        <div class="grid gap-4 sm:grid-cols-[7rem_minmax(0,1fr)]">
-          <VodPoster
-            :src="detail.poster"
-            :alt="detail.name"
-            class="rounded-[1.25rem] border border-white/10"
-            icon-class="h-10 w-10"
-            image-class="aspect-[3/4] w-full object-cover"
-          />
-
-          <div class="grid gap-3">
-            <div v-if="detail.actor" class="rounded-[1.25rem] border border-white/10 bg-black/18 p-4">
-              <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">演员</p>
-              <p class="mt-2 text-sm leading-6 text-white/78">{{ detail.actor }}</p>
-            </div>
-            <div v-if="detail.director" class="rounded-[1.25rem] border border-white/10 bg-black/18 p-4">
-              <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">导演</p>
-              <p class="mt-2 text-sm leading-6 text-white/78">{{ detail.director }}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="mt-4 rounded-[1.25rem] border border-white/10 bg-black/18 p-4">
-          <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">简介</p>
-          <p class="mt-3 text-sm leading-7 text-white/74">{{ cleanDescription || '暂无简介。' }}</p>
         </div>
       </article>
     </template>
