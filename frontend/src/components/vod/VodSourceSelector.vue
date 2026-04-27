@@ -58,6 +58,6 @@ const emit = defineEmits<{
 }
 
 .vod-search-input-compact:deep(.n-input__input-el) {
-  font-size: 0.82rem;
+  font-size: 16px;
 }
 </style>
