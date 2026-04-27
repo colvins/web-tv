@@ -73,7 +73,6 @@ const emit = defineEmits<{
           compact
           :playback="playback"
           :episode-error="episodeError"
-          :show-technical-details="false"
           title="播放"
           :subtitle="null"
         />

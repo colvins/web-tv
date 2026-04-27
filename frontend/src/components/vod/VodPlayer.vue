@@ -9,12 +9,10 @@ const props = withDefaults(defineProps<{
   playback: VodPlayback
   episodeError: string | null
   compact?: boolean
-  showTechnicalDetails?: boolean
   title?: string
   subtitle?: string | null
 }>(), {
   compact: false,
-  showTechnicalDetails: true,
   title: '播放器',
   subtitle: '请选择剧集并保持播放器在视野内。',
 })
@@ -44,6 +42,7 @@ const playbackStateLabel = computed(() => {
         :ref="playback.setVideoElement"
         class="h-full w-full bg-black object-contain"
         playsinline
+        controls
         controlslist="nodownload noplaybackrate"
         preload="none"
         @canplay="playback.handleCanPlay"
@@ -53,7 +52,7 @@ const playbackStateLabel = computed(() => {
         @volumechange="playback.handleVolumeChange"
         @waiting="playback.handleWaiting"
       ></video>
-      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent" :class="compact ? 'p-3' : 'p-4'">
+      <div class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/30 to-transparent" :class="compact ? 'p-3' : 'p-4'">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div class="min-w-0">
             <p v-if="title" class="text-[11px] uppercase tracking-[0.22em] text-white/42">{{ title }}</p>
@@ -101,30 +100,6 @@ const playbackStateLabel = computed(() => {
             </NButton>
           </div>
         </div>
-      </div>
-    </div>
-    <div v-if="showTechnicalDetails" class="grid gap-3 border-t border-white/10 bg-black/26 p-4 sm:grid-cols-3">
-      <div class="rounded-2xl border border-white/10 bg-white/6 p-3 text-sm text-white/70">
-        <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">播放来源</p>
-        <p class="mt-2 break-all">{{ playback.streamHost.value }}</p>
-      </div>
-      <div class="rounded-2xl border border-white/10 bg-white/6 p-3 text-sm text-white/70">
-        <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">流格式</p>
-        <p class="mt-2">{{ playback.streamTypeGuess.value }}</p>
-      </div>
-      <div class="rounded-2xl border border-white/10 bg-white/6 p-3 text-sm text-white/70">
-        <p class="text-[11px] uppercase tracking-[0.16em] text-white/40">播放方式</p>
-        <p class="mt-2">
-          {{
-            playback.currentEpisode.value?.is_hls_like
-              ? playback.nativeHlsSupported.value
-                ? '浏览器原生 HLS'
-                : playback.hlsJsSupported.value
-                  ? 'hls.js'
-                  : '暂不支持'
-              : '浏览器原生视频'
-          }}
-        </p>
       </div>
     </div>
   </div>
