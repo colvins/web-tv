@@ -26,12 +26,26 @@ type PlaybackErrorInfo = {
   detail?: string
 }
 
+type NativeVideoErrorInfo = {
+  code: string
+  message: string
+}
+
+type HlsErrorInfo = {
+  type: string
+  details: string
+}
+
+export type StreamTypeGuess = 'hls_m3u8' | 'direct_ts' | 'unknown_stream'
+
 export function useLivePlayback() {
   const selectedChannel = ref<LiveChannel | null>(null)
   const playbackState = ref<PlaybackState>('idle')
   const playbackError = ref('')
   const playbackErrorCategory = ref<PlaybackErrorCategory | null>(null)
   const playbackErrorTechnical = ref('')
+  const nativeVideoError = ref<NativeVideoErrorInfo | null>(null)
+  const hlsError = ref<HlsErrorInfo | null>(null)
   const isPlaying = ref(false)
   const isMuted = ref(false)
   const isFullscreen = ref(false)
@@ -44,6 +58,7 @@ export function useLivePlayback() {
   let hls: Hls | null = null
   let controlsHideTimer: number | undefined
   let hlsMediaRecoveryAttempted = false
+  let lastLoggedErrorSignature = ''
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
   const shouldPinControlsVisible = computed(() =>
@@ -52,6 +67,13 @@ export function useLivePlayback() {
     playbackState.value === 'error' ||
     !selectedChannel.value,
   )
+  const streamHost = computed(() => getStreamHost(selectedChannel.value?.stream_url))
+  const streamTypeGuess = computed<StreamTypeGuess>(() => guessStreamType(selectedChannel.value?.stream_url ?? ''))
+  const nativeHlsSupported = computed(() => {
+    const video = videoEl.value
+    return !!video?.canPlayType('application/vnd.apple.mpegurl')
+  })
+  const hlsJsSupported = computed(() => Hls.isSupported())
 
   function setVideoElement(element: unknown) {
     videoEl.value = element instanceof HTMLVideoElement ? element : null
@@ -119,14 +141,35 @@ export function useLivePlayback() {
     }
   }
 
+  function guessStreamType(streamUrl: string) {
+    const normalizedUrl = streamUrl.toLowerCase()
+    if (normalizedUrl.includes('.m3u8')) return 'hls_m3u8'
+    if (
+      normalizedUrl.includes('.ts') ||
+      normalizedUrl.includes('mpegts') ||
+      normalizedUrl.includes('transportstream') ||
+      normalizedUrl.includes('video/mp2t')
+    ) {
+      return 'direct_ts'
+    }
+    return 'unknown_stream'
+  }
+
   function logPlaybackFailure(error: PlaybackErrorInfo) {
-    console.warn('[live-playback]', {
+    const signature = JSON.stringify({
       channel: selectedChannel.value?.name ?? 'unknown-channel',
       host: getStreamHost(selectedChannel.value?.stream_url),
       category: error.category,
       technicalReason: error.technicalReason,
       detail: error.detail ?? '',
+      nativeVideoError: nativeVideoError.value,
+      hlsError: hlsError.value,
     })
+
+    if (signature === lastLoggedErrorSignature) return
+
+    lastLoggedErrorSignature = signature
+    console.warn('[live-playback]', JSON.parse(signature))
   }
 
   function setPlaybackError(error: PlaybackErrorInfo) {
@@ -144,6 +187,9 @@ export function useLivePlayback() {
     playbackError.value = ''
     playbackErrorCategory.value = null
     playbackErrorTechnical.value = ''
+    nativeVideoError.value = null
+    hlsError.value = null
+    lastLoggedErrorSignature = ''
   }
 
   function buildPlaybackError(category: PlaybackErrorCategory, detail?: string): PlaybackErrorInfo {
@@ -264,6 +310,21 @@ export function useLivePlayback() {
     }
   }
 
+  function getNativeVideoErrorCodeLabel(error: MediaError | null) {
+    switch (error?.code) {
+      case MediaError.MEDIA_ERR_ABORTED:
+        return 'MEDIA_ERR_ABORTED'
+      case MediaError.MEDIA_ERR_NETWORK:
+        return 'MEDIA_ERR_NETWORK'
+      case MediaError.MEDIA_ERR_DECODE:
+        return 'MEDIA_ERR_DECODE'
+      case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+        return 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+      default:
+        return 'UNKNOWN_MEDIA_ERR'
+    }
+  }
+
   async function attemptPlay() {
     const video = videoEl.value
     if (!video) return
@@ -317,6 +378,13 @@ export function useLivePlayback() {
           void attemptPlay()
         })
         hls.on(Hls.Events.ERROR, (_event, data) => {
+          hlsError.value = {
+            type: data.type ?? 'unknown',
+            details: [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
+              .filter(Boolean)
+              .join(' | '),
+          }
+
           if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
             playbackState.value = 'loading'
             playerStatusText.value = 'Buffering stream...'
@@ -448,6 +516,10 @@ export function useLivePlayback() {
   }
 
   function handleVideoError() {
+    nativeVideoError.value = {
+      code: getNativeVideoErrorCodeLabel(videoEl.value?.error ?? null),
+      message: videoEl.value?.error?.message || 'Media element reported an error.',
+    }
     setPlaybackError(classifyNativeVideoError(videoEl.value?.error ?? null))
   }
 
@@ -511,6 +583,12 @@ export function useLivePlayback() {
     playbackError,
     playbackErrorCategory,
     playbackErrorTechnical,
+    nativeVideoError,
+    hlsError,
+    streamHost,
+    streamTypeGuess,
+    nativeHlsSupported,
+    hlsJsSupported,
     isPlaying,
     isMuted,
     isFullscreen,

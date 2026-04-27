@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { LoaderCircle, Maximize, Pause, Play, Tv, Volume2, VolumeX } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { Check, ChevronDown, Copy, LoaderCircle, Maximize, Pause, Play, Tv, Volume2, VolumeX } from 'lucide-vue-next'
 
 import type { LivePlayback } from '@/composables/useLivePlayback'
 
@@ -31,6 +31,51 @@ const errorBadgeText = computed(() => {
       return 'Playback error'
   }
 })
+
+const copyState = ref<'idle' | 'done' | 'failed'>('idle')
+
+const diagnosticsReason = computed(() => props.playback.playbackError.value || props.playback.playbackErrorTechnical.value)
+
+const diagnosticsLines = computed(() => {
+  const lines = [
+    `Channel: ${props.playback.selectedChannel.value?.name ?? 'Unknown'}`,
+    `Group: ${props.playback.selectedChannel.value?.group_title ?? 'Ungrouped'}`,
+    `Stream host: ${props.playback.streamHost.value}`,
+    `Error category: ${props.playback.playbackErrorCategory.value ?? 'unknown_error'}`,
+    `Reason: ${diagnosticsReason.value || 'Unknown playback error'}`,
+    `Stream type: ${props.playback.streamTypeGuess.value}`,
+    `native_hls_supported: ${props.playback.nativeHlsSupported.value}`,
+    `hls_js_supported: ${props.playback.hlsJsSupported.value}`,
+  ]
+
+  if (props.playback.nativeVideoError.value) {
+    lines.push(`Native video error code: ${props.playback.nativeVideoError.value.code}`)
+    lines.push(`Native video error message: ${props.playback.nativeVideoError.value.message}`)
+  }
+
+  if (props.playback.hlsError.value?.type) {
+    lines.push(`HLS error type: ${props.playback.hlsError.value.type}`)
+  }
+
+  if (props.playback.hlsError.value?.details) {
+    lines.push(`HLS error details: ${props.playback.hlsError.value.details}`)
+  }
+
+  return lines.join('\n')
+})
+
+async function copyDiagnostics() {
+  try {
+    await navigator.clipboard.writeText(diagnosticsLines.value)
+    copyState.value = 'done'
+  } catch {
+    copyState.value = 'failed'
+  }
+
+  window.setTimeout(() => {
+    copyState.value = 'idle'
+  }, 1600)
+}
 </script>
 
 <template>
@@ -163,6 +208,80 @@ const errorBadgeText = computed(() => {
             </span>
           </div>
 
+          <details
+            v-if="playback.playbackState.value === 'error'"
+            class="diagnostics-panel max-w-md rounded-[1.25rem] border border-white/10 bg-black/42 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+          >
+            <summary class="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate font-medium text-white">Playback diagnostics</p>
+                <p class="truncate text-[11px] text-white/48">{{ playback.streamHost.value }}</p>
+              </div>
+              <ChevronDown class="diagnostics-chevron h-4 w-4 shrink-0 text-white/56 transition-transform duration-200" />
+            </summary>
+
+            <div class="mt-3 space-y-3 border-t border-white/8 pt-3">
+              <div class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-2 leading-5">
+                <span class="text-white/42">Category</span>
+                <span class="break-words text-white/86">{{ playback.playbackErrorCategory.value ?? 'unknown_error' }}</span>
+
+                <span class="text-white/42">Reason</span>
+                <span class="break-words text-white/86">{{ diagnosticsReason }}</span>
+
+                <span class="text-white/42">Channel</span>
+                <span class="break-words text-white/86">{{ playback.selectedChannel.value?.name ?? 'Unknown' }}</span>
+
+                <span class="text-white/42">Group</span>
+                <span class="break-words text-white/86">{{ playback.selectedChannel.value?.group_title ?? 'Ungrouped' }}</span>
+
+                <span class="text-white/42">Stream type</span>
+                <span class="break-words text-white/86">{{ playback.streamTypeGuess.value }}</span>
+
+                <span class="text-white/42">Native HLS</span>
+                <span class="break-words text-white/86">{{ playback.nativeHlsSupported.value }}</span>
+
+                <span class="text-white/42">hls.js</span>
+                <span class="break-words text-white/86">{{ playback.hlsJsSupported.value }}</span>
+
+                <template v-if="playback.nativeVideoError.value">
+                  <span class="text-white/42">Video error</span>
+                  <span class="break-words text-white/86">
+                    {{ playback.nativeVideoError.value.code }}
+                    <span class="text-white/54">· {{ playback.nativeVideoError.value.message }}</span>
+                  </span>
+                </template>
+
+                <template v-if="playback.hlsError.value?.type">
+                  <span class="text-white/42">HLS type</span>
+                  <span class="break-words text-white/86">{{ playback.hlsError.value.type }}</span>
+                </template>
+
+                <template v-if="playback.hlsError.value?.details">
+                  <span class="text-white/42">HLS details</span>
+                  <span class="break-words text-white/86">{{ playback.hlsError.value.details }}</span>
+                </template>
+              </div>
+
+              <button
+                class="diagnostics-copy-button tv-focus-card inline-flex min-h-10 items-center gap-2 rounded-full border border-white/12 bg-white/8 px-3 py-2 text-xs text-white/86 transition"
+                type="button"
+                @click.stop="copyDiagnostics"
+              >
+                <Check v-if="copyState === 'done'" class="h-4 w-4" />
+                <Copy v-else class="h-4 w-4" />
+                <span>
+                  {{
+                    copyState === 'done'
+                      ? 'Copied'
+                      : copyState === 'failed'
+                        ? 'Copy failed'
+                        : 'Copy diagnostics'
+                  }}
+                </span>
+              </button>
+            </div>
+          </details>
+
           <div class="flex w-fit max-w-full items-center gap-3 rounded-full">
             <button
               class="player-control-button tv-focus-card flex h-12 w-12 items-center justify-center rounded-full text-white transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-14 sm:w-14"
@@ -229,6 +348,15 @@ const errorBadgeText = computed(() => {
 .player-control-button:hover,
 .player-control-button:focus-visible {
   background: rgb(16 16 18 / 0.78);
+}
+
+.diagnostics-panel[open] .diagnostics-chevron {
+  transform: rotate(180deg);
+}
+
+.diagnostics-copy-button:hover,
+.diagnostics-copy-button:focus-visible {
+  background: rgb(255 255 255 / 0.12);
 }
 
 .player-shell:fullscreen {
