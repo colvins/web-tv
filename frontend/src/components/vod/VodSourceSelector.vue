@@ -17,7 +17,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex" :class="compact ? 'w-full items-center justify-end' : 'justify-end'">
+  <div class="flex w-full justify-end sm:w-auto">
     <div class="flex min-w-0 items-center" :class="compact ? 'gap-2' : 'gap-3'">
       <NInput
         :value="searchQuery"
