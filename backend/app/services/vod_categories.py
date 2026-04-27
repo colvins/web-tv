@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -32,71 +33,110 @@ REAL_PARENT_FIELD_NAMES = (
 )
 LOGGER = logging.getLogger(__name__)
 
-FALLBACK_PARENT_GROUPS: dict[str, tuple[str, ...]] = {
-    "电影": (
-        "动作片",
-        "喜剧片",
-        "爱情片",
-        "科幻片",
-        "恐怖片",
-        "剧情片",
-        "战争片",
-        "纪录片",
-        "动画片",
-        "4K电影",
-        "邵氏电影",
-        "Netflix电影",
+@dataclass(frozen=True)
+class SemanticParentGroup:
+    canonical_name: str
+    aliases: tuple[str, ...]
+    child_names: tuple[str, ...]
+
+
+SEMANTIC_PARENT_GROUPS: tuple[SemanticParentGroup, ...] = (
+    SemanticParentGroup(
+        canonical_name="电影",
+        aliases=("电影",),
+        child_names=(
+            "动作片",
+            "喜剧片",
+            "爱情片",
+            "科幻片",
+            "恐怖片",
+            "剧情片",
+            "战争片",
+            "纪录片",
+            "动画片",
+            "4K电影",
+            "邵氏电影",
+            "Netflix电影",
+        ),
     ),
-    "电视剧": (
-        "国产剧",
-        "欧美剧",
-        "韩剧",
-        "日剧",
-        "港剧",
-        "台剧",
-        "泰剧",
-        "海外剧",
-        "Netflix自制剧",
+    SemanticParentGroup(
+        canonical_name="电视剧",
+        aliases=("电视剧", "连续剧"),
+        child_names=(
+            "国产剧",
+            "欧美剧",
+            "韩剧",
+            "日剧",
+            "港剧",
+            "台剧",
+            "泰剧",
+            "海外剧",
+            "Netflix自制剧",
+            "台湾剧",
+            "韩国剧",
+            "香港剧",
+            "泰国剧",
+            "日本剧",
+            "大陆剧",
+            "连续剧",
+            "电视剧",
+        ),
     ),
-    "综艺": (
-        "大陆综艺",
-        "日韩综艺",
-        "港台综艺",
-        "欧美综艺",
-        "演唱会",
-        "体育赛事",
-        "篮球",
-        "足球",
-        "斯诺克",
+    SemanticParentGroup(
+        canonical_name="综艺",
+        aliases=("综艺",),
+        child_names=(
+            "大陆综艺",
+            "日韩综艺",
+            "港台综艺",
+            "欧美综艺",
+            "演唱会",
+            "体育赛事",
+            "篮球",
+            "足球",
+            "斯诺克",
+        ),
     ),
-    "动漫": (
-        "国产动漫",
-        "日韩动漫",
-        "欧美动漫",
-        "港台动漫",
-        "海外动漫",
-        "有声动漫",
-        "漫剧",
+    SemanticParentGroup(
+        canonical_name="动漫",
+        aliases=("动漫",),
+        child_names=(
+            "国产动漫",
+            "日韩动漫",
+            "欧美动漫",
+            "港台动漫",
+            "海外动漫",
+            "有声动漫",
+            "漫剧",
+        ),
     ),
-    "短剧": (
-        "爽文短剧",
-        "女频恋爱",
-        "反转爽剧",
-        "古装仙侠",
-        "年代穿越",
-        "脑洞悬疑",
-        "现代都市",
-        "擦边短剧",
+    SemanticParentGroup(
+        canonical_name="短剧",
+        aliases=("短剧",),
+        child_names=(
+            "爽文短剧",
+            "女频恋爱",
+            "反转爽剧",
+            "古装仙侠",
+            "年代穿越",
+            "脑洞悬疑",
+            "现代都市",
+            "擦边短剧",
+        ),
     ),
-    "伦理": (
-        "港台三级",
-        "韩国伦理",
-        "西方伦理",
-        "日本伦理",
-        "两性课堂",
-        "写真热舞",
+    SemanticParentGroup(
+        canonical_name="伦理",
+        aliases=("伦理",),
+        child_names=(
+            "港台三级",
+            "韩国伦理",
+            "西方伦理",
+            "日本伦理",
+            "两性课堂",
+            "写真热舞",
+        ),
     ),
-}
+)
 
 async def list_categories_for_source(
     db: AsyncSession,
@@ -198,7 +238,7 @@ def parse_categories_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
     if _has_native_hierarchy(raw_categories):
         return _finalize_native_categories(raw_categories, names_by_type_id)
-    return _apply_name_based_parent_fallback(_finalize_root_categories(raw_categories))
+    return _apply_semantic_fallback(raw_categories)
 
 
 async def _sync_site_categories(
@@ -321,6 +361,26 @@ def _finalize_root_categories(categories: list[dict[str, Any]]) -> list[dict[str
     ]
 
 
+def _semantic_group_by_canonical_name() -> dict[str, SemanticParentGroup]:
+    return {group.canonical_name: group for group in SEMANTIC_PARENT_GROUPS}
+
+
+def _semantic_alias_to_canonical_name() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for group in SEMANTIC_PARENT_GROUPS:
+        for alias in group.aliases:
+            mapping[_normalize_category_name(alias)] = group.canonical_name
+    return mapping
+
+
+def _semantic_child_to_canonical_name() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for group in SEMANTIC_PARENT_GROUPS:
+        for child_name in group.child_names:
+            mapping[_normalize_category_name(child_name)] = group.canonical_name
+    return mapping
+
+
 def _finalize_native_categories(
     categories: list[dict[str, Any]],
     names_by_type_id: dict[str, str],
@@ -359,42 +419,96 @@ def _finalize_native_categories(
     return finalized
 
 
-def _apply_name_based_parent_fallback(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _apply_semantic_fallback(categories: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not categories:
         return categories
 
-    canonical_parent_ids: dict[str, str] = {}
-    for category in categories:
-        type_id = _string_or_none(category.get("type_id"))
-        canonical_name = _canonical_parent_name(category.get("type_name"))
-        if type_id and canonical_name and canonical_name not in canonical_parent_ids:
-            canonical_parent_ids[canonical_name] = type_id
+    root_categories = _finalize_root_categories(categories)
+    alias_to_canonical = SEMANTIC_ALIAS_TO_CANONICAL_NAME
+    child_to_canonical = SEMANTIC_CHILD_TO_CANONICAL_NAME
+    canonical_groups = SEMANTIC_GROUP_BY_CANONICAL_NAME
+    chosen_parent_by_canonical: dict[str, dict[str, Any]] = {}
+    parent_duplicates_to_skip: set[str] = set()
 
+    for category in root_categories:
+        type_id = _string_or_none(category.get("type_id"))
+        if not type_id:
+            continue
+        normalized_name = _normalize_category_name(category.get("type_name"))
+        canonical_name = alias_to_canonical.get(normalized_name)
+        if not canonical_name:
+            continue
+        existing = chosen_parent_by_canonical.get(canonical_name)
+        if existing is None:
+            chosen_parent_by_canonical[canonical_name] = category
+            continue
+        group = canonical_groups[canonical_name]
+        preferred_name = _preferred_semantic_parent_name(existing.get("type_name"), category.get("type_name"), group)
+        if _string_or_none(category.get("type_name")) == preferred_name:
+            existing_type_id = _string_or_none(existing.get("type_id"))
+            if existing_type_id:
+                parent_duplicates_to_skip.add(existing_type_id)
+            chosen_parent_by_canonical[canonical_name] = category
+            continue
+        parent_duplicates_to_skip.add(type_id)
+
+    assigned_child_count = 0
     updated: list[dict[str, Any]] = []
-    for category in categories:
-        parent_name = FALLBACK_CHILD_TO_PARENT.get(_normalize_category_name(category.get("type_name")))
-        if not parent_name:
-            updated.append(category)
+    for category in root_categories:
+        type_id = _string_or_none(category.get("type_id"))
+        if type_id and type_id in parent_duplicates_to_skip:
             continue
 
-        updated.append(
-            {
-                **category,
-                "parent_type_id": canonical_parent_ids.get(parent_name, _synthetic_parent_type_id(parent_name)),
-                "parent_type_name": parent_name,
-            }
-        )
+        normalized_name = _normalize_category_name(category.get("type_name"))
+        canonical_name = child_to_canonical.get(normalized_name)
+        chosen_parent = chosen_parent_by_canonical.get(canonical_name or "")
+        chosen_parent_id = _string_or_none(chosen_parent.get("type_id")) if chosen_parent else None
+        is_chosen_parent = bool(chosen_parent_id and chosen_parent_id == type_id)
+
+        if canonical_name and not is_chosen_parent:
+            assigned_child_count += 1
+            updated.append(
+                {
+                    **category,
+                    "parent_type_id": chosen_parent_id or _synthetic_parent_type_id(canonical_name),
+                    "parent_type_name": canonical_name,
+                }
+            )
+            continue
+
+        if canonical_name and chosen_parent and is_chosen_parent:
+            updated.append(
+                {
+                    **category,
+                    "type_name": canonical_name,
+                }
+            )
+            continue
+
+        updated.append(category)
+
+    if assigned_child_count == 0:
+        return root_categories
+
     return updated
+
+
+def _preferred_semantic_parent_name(existing_name: Any, candidate_name: Any, group: SemanticParentGroup) -> str:
+    existing = _string_or_none(existing_name) or group.canonical_name
+    candidate = _string_or_none(candidate_name) or group.canonical_name
+    ordered_names = (group.canonical_name, *group.aliases)
+    existing_rank = ordered_names.index(existing) if existing in ordered_names else len(ordered_names)
+    candidate_rank = ordered_names.index(candidate) if candidate in ordered_names else len(ordered_names)
+    if candidate_rank < existing_rank:
+        return candidate
+    return existing
 
 
 def _canonical_parent_name(value: Any) -> str | None:
     normalized = _normalize_category_name(value)
     if not normalized:
         return None
-    for parent_name in FALLBACK_PARENT_GROUPS:
-        if normalized == _normalize_category_name(parent_name):
-            return parent_name
-    return None
+    return SEMANTIC_ALIAS_TO_CANONICAL_NAME.get(normalized)
 
 
 def _normalize_category_name(value: Any) -> str:
@@ -408,8 +522,6 @@ def _synthetic_parent_type_id(parent_name: str) -> str:
     return f"fallback:{_normalize_category_name(parent_name)}"
 
 
-FALLBACK_CHILD_TO_PARENT = {
-    _normalize_category_name(child_name): parent_name
-    for parent_name, child_names in FALLBACK_PARENT_GROUPS.items()
-    for child_name in child_names
-}
+SEMANTIC_GROUP_BY_CANONICAL_NAME = _semantic_group_by_canonical_name()
+SEMANTIC_ALIAS_TO_CANONICAL_NAME = _semantic_alias_to_canonical_name()
+SEMANTIC_CHILD_TO_CANONICAL_NAME = _semantic_child_to_canonical_name()
