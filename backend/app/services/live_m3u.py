@@ -173,12 +173,25 @@ async def diagnose_channel(db: AsyncSession, channel_id: uuid.UUID) -> dict[str,
     warnings: list[str] = ["Diagnostics used lightweight preview requests only."]
     m3u8_info: dict[str, Any] | None = None
     sample_segment_check: dict[str, Any] | None = None
+    browser_playback_profile: str | None = None
+    browser_playback_url: str | None = None
 
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=DIAGNOSTIC_TIMEOUT) as client:
             preview = await _fetch_preview(client, channel.stream_url, PREVIEW_LIMIT)
             stream_type_guess = _guess_stream_type(channel.stream_url, preview.content_type, preview.preview_bytes)
             body_preview = _format_preview(preview.preview_bytes, preview.content_type)
+            browser_candidate = _build_browser_playback_candidate(preview.final_url)
+
+            if browser_candidate is not None:
+                try:
+                    browser_preview = await _fetch_preview(client, browser_candidate, PREVIEW_LIMIT)
+                    if browser_preview.status_code < 400 and (browser_preview.content_type or "").startswith("video/x-matroska"):
+                        browser_playback_profile = "matroska"
+                        browser_playback_url = browser_candidate
+                        warnings.append("A browser-friendly matroska playback profile is available for this channel.")
+                except httpx.HTTPError:
+                    warnings.append("A browser playback profile hint was detected, but it could not be verified.")
 
             if stream_type_guess == "hls_m3u8":
                 m3u8_info = _inspect_m3u8_preview(preview.preview_bytes, preview.final_url)
@@ -216,6 +229,8 @@ async def diagnose_channel(db: AsyncSession, channel_id: uuid.UUID) -> dict[str,
                 "diagnosis_level": diagnosis_level,
                 "diagnosis_summary": diagnosis_summary,
                 "suggested_next_step": suggested_next_step,
+                "browser_playback_profile": browser_playback_profile,
+                "browser_playback_url": browser_playback_url,
                 "warnings": warnings,
             }
     except httpx.TimeoutException:
@@ -452,8 +467,16 @@ def _build_failure_diagnosis(
         "diagnosis_level": diagnosis_level,
         "diagnosis_summary": diagnosis_summary,
         "suggested_next_step": suggested_next_step,
+        "browser_playback_profile": None,
+        "browser_playback_url": None,
         "warnings": warnings,
     }
+
+
+def _build_browser_playback_candidate(final_url: str) -> str | None:
+    if "profile=pass" not in final_url:
+        return None
+    return final_url.replace("profile=pass", "profile=matroska", 1)
 
 
 def parse_m3u(text: str) -> tuple[list[ParsedChannel], list[str]]:

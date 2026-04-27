@@ -65,8 +65,10 @@ export function useLivePlayback() {
   let mpegtsPlayer: mpegts.Player | null = null
   let controlsHideTimer: number | undefined
   let hlsMediaRecoveryAttempted = false
+  let browserProfileRetryAttempted = false
   let mpegtsFallbackAttempted = false
   let usingMpegtsFallback = false
+  let usingBrowserProfileFallback = false
   let lastLoggedErrorSignature = ''
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
@@ -136,8 +138,10 @@ export function useLivePlayback() {
     mpegtsPlayer?.destroy()
     mpegtsPlayer = null
     hlsMediaRecoveryAttempted = false
+    browserProfileRetryAttempted = false
     mpegtsFallbackAttempted = false
     usingMpegtsFallback = false
+    usingBrowserProfileFallback = false
     channelDiagnosis.value = null
     channelDiagnosisLoading.value = false
     channelDiagnosisError.value = ''
@@ -489,6 +493,41 @@ export function useLivePlayback() {
     await attemptPlay()
   }
 
+  async function startBrowserProfileFallback() {
+    if (!selectedChannel.value) return false
+
+    channelDiagnosisError.value = ''
+
+    try {
+      const diagnosis = await diagnoseLiveChannel(selectedChannel.value.id)
+      channelDiagnosis.value = diagnosis
+
+      if (!diagnosis.browser_playback_url) return false
+
+      const video = videoEl.value
+      if (!video) return false
+
+      usingBrowserProfileFallback = true
+      playbackState.value = 'loading'
+      playerStatusText.value = 'Retrying stream with browser profile...'
+      revealControls()
+
+      hls?.destroy()
+      hls = null
+      mpegtsPlayer?.unload()
+      mpegtsPlayer?.detachMediaElement()
+      mpegtsPlayer?.destroy()
+      mpegtsPlayer = null
+
+      video.src = diagnosis.browser_playback_url
+      await attemptPlay()
+      return true
+    } catch (error) {
+      channelDiagnosisError.value = error instanceof ApiError ? error.message : 'Unable to resolve browser playback profile.'
+      return false
+    }
+  }
+
   async function runChannelDiagnosis() {
     if (!selectedChannel.value) return
 
@@ -605,11 +644,29 @@ export function useLivePlayback() {
 
     const streamUrl = selectedChannel.value?.stream_url ?? ''
     const shouldTryMpegtsFallback =
+      !usingBrowserProfileFallback &&
       !usingMpegtsFallback &&
       !mpegtsFallbackAttempted &&
       isDirectTsStream(streamUrl) &&
       mpegts.isSupported() &&
       mediaError?.code !== MediaError.MEDIA_ERR_ABORTED
+
+    const shouldTryBrowserProfileFallback =
+      !usingBrowserProfileFallback &&
+      !browserProfileRetryAttempted &&
+      isDirectTsStream(streamUrl) &&
+      mediaError?.code !== MediaError.MEDIA_ERR_ABORTED
+
+    if (shouldTryBrowserProfileFallback) {
+      browserProfileRetryAttempted = true
+      void startBrowserProfileFallback().then((resolved) => {
+        if (!resolved && shouldTryMpegtsFallback) {
+          mpegtsFallbackAttempted = true
+          void startMpegtsFallback(streamUrl)
+        }
+      })
+      return
+    }
 
     if (shouldTryMpegtsFallback) {
       mpegtsFallbackAttempted = true

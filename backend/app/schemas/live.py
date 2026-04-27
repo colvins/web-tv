@@ -81,4 +81,6 @@ class LiveChannelDiagnosisRead(BaseModel):
     diagnosis_level: str
     diagnosis_summary: str
     suggested_next_step: str
+    browser_playback_profile: str | None = None
+    browser_playback_url: str | None = None
     warnings: list[str]

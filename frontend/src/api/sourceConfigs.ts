@@ -146,6 +146,8 @@ export type LiveChannelDiagnosis = {
   diagnosis_level: LiveChannelDiagnosisLevel
   diagnosis_summary: string
   suggested_next_step: string
+  browser_playback_profile: string | null
+  browser_playback_url: string | null
   warnings: string[]
 }
 
