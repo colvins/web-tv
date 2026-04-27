@@ -6,12 +6,11 @@ import {
   getVodCategories,
   getCurrentVodSite,
   getVodList,
-  listSourceConfigs,
   searchVod,
-  type SourceConfig,
   type VodBrowseCategoriesResponse,
   type VodBrowseItem,
   type VodBrowsePageResponse,
+  type CurrentVodSite,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
 import VodDesktopLayout from '@/components/vod/VodDesktopLayout.vue'
@@ -27,7 +26,6 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const sources = ref<SourceConfig[]>([])
 const selectedSourceId = ref<string | null>(null)
 const categoriesResponse = ref<VodBrowseCategoriesResponse | null>(null)
 const pageResponse = ref<VodBrowsePageResponse | null>(null)
@@ -42,20 +40,17 @@ const submittedQuery = ref('')
 const bootstrapped = ref(false)
 const lastLoadedRouteKey = ref<string | null>(null)
 const isDesktopLayout = ref(true)
+const currentVodSite = ref<CurrentVodSite | null>(null)
 
 let mediaQuery: MediaQueryList | undefined
 
-const selectedSource = computed(
-  () => sources.value.find((source) => source.id === selectedSourceId.value) ?? null,
+const headerSourceName = computed(
+  () => pageResponse.value?.site.source_name ?? categoriesResponse.value?.site.source_name ?? currentVodSite.value?.source_name ?? 'VOD Source',
 )
-
-const headerSiteName = computed(() => pageResponse.value?.site.site_name ?? categoriesResponse.value?.site.site_name ?? 'VOD Library')
-const headerSourceName = computed(() => pageResponse.value?.site.source_name ?? categoriesResponse.value?.site.source_name ?? selectedSource.value?.name ?? 'VOD Source')
 const pageLabel = computed(() => `${pageResponse.value?.page ?? 1} / ${pageResponse.value?.pagecount ?? 1}`)
 const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
-const enabledSources = computed(() => sources.value.filter((source) => source.enabled && source.vod_site_count > 0))
 const toolbarTarget = computed(() => (isDesktopLayout.value ? '#vod-page-toolbar-desktop' : '#vod-page-toolbar-mobile'))
 
 function syncLayoutMode() {
@@ -151,44 +146,50 @@ async function bootstrap() {
   loading.value = true
   loadError.value = null
   try {
-    const [sourceList, currentVodSite] = await Promise.all([listSourceConfigs(), getCurrentVodSite()])
-    sources.value = sourceList
-
     const routeState = parseVodCatalogRouteState(route.query)
-    const enabledIds = new Set(sourceList.filter((source) => source.enabled && source.vod_site_count > 0).map((source) => source.id))
-    const candidateIds = [
-      routeState.sourceId && enabledIds.has(routeState.sourceId) ? routeState.sourceId : null,
-      currentVodSite?.source_config_id && enabledIds.has(currentVodSite.source_config_id) ? currentVodSite.source_config_id : null,
-      ...enabledSources.value.map((source) => source.id),
-    ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
-
-    for (const sourceId of candidateIds) {
+    if (routeState.sourceId) {
       try {
-        const initialRouteState =
-          !routeState.sourceId && currentVodSite?.source_config_id === sourceId
-            ? { ...routeState, sourceId, siteKey: currentVodSite.site_key }
-            : { ...routeState, sourceId }
-        const catalog = await fetchSourceCatalog(sourceId, initialRouteState)
-        applyCatalogState(sourceId, catalog)
-        if (
-          routeState.sourceId !== sourceId ||
-          getVodCatalogRouteKey(initialRouteState) !== getVodCatalogRouteKey({ ...catalog.routeState, sourceId })
-        ) {
+        const catalog = await fetchSourceCatalog(routeState.sourceId, routeState)
+        applyCatalogState(routeState.sourceId, catalog)
+        if (getVodCatalogRouteKey(routeState) !== getVodCatalogRouteKey(catalog.routeState)) {
           await router.replace({
             name: 'vod',
-            query: buildVodCatalogQuery({ ...catalog.routeState, sourceId }),
+            query: buildVodCatalogQuery(catalog.routeState),
           })
         }
         return
       } catch {
-        continue
+        selectedSourceId.value = null
       }
     }
 
+    currentVodSite.value = await getCurrentVodSite()
+    const fallbackSourceId = currentVodSite.value?.source_config_id
+    if (!fallbackSourceId) {
+      selectedSourceId.value = null
+      resetVodState()
+      noUsableSource.value = true
+      return
+    }
+
+    const fallbackSiteKey = currentVodSite.value?.site_key ?? null
+    const fallbackRouteState = {
+      ...routeState,
+      sourceId: fallbackSourceId,
+      siteKey: routeState.siteKey ?? fallbackSiteKey,
+    }
+    const catalog = await fetchSourceCatalog(fallbackSourceId, fallbackRouteState)
+    applyCatalogState(fallbackSourceId, catalog)
+    if (getVodCatalogRouteKey(fallbackRouteState) !== getVodCatalogRouteKey({ ...catalog.routeState, sourceId: fallbackSourceId })) {
+      await router.replace({
+        name: 'vod',
+        query: buildVodCatalogQuery({ ...catalog.routeState, sourceId: fallbackSourceId }),
+      })
+    }
+  } catch (error) {
     selectedSourceId.value = null
     resetVodState()
     noUsableSource.value = true
-  } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD sources'
   } finally {
     loading.value = false

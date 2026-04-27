@@ -9,6 +9,9 @@ import { buildVodCatalogQuery } from '@/utils/vodRouteState'
 
 const props = defineProps<{
   items: RecentVodPlaybackItem[]
+  title?: string
+  eyebrow?: string
+  emptyMessage?: string
 }>()
 
 const router = useRouter()
@@ -82,8 +85,8 @@ watch(
   <section class="mt-10">
     <div class="mb-4 flex items-end justify-between gap-4">
       <div>
-        <p class="text-sm uppercase tracking-[0.28em] text-white/42">Library</p>
-        <h2 class="mt-2 text-2xl font-semibold text-white">Continue Watching</h2>
+        <p class="text-sm uppercase tracking-[0.28em] text-white/42">{{ props.eyebrow ?? 'Library' }}</p>
+        <h2 class="mt-2 text-2xl font-semibold text-white">{{ props.title ?? 'Continue Watching' }}</h2>
       </div>
       <div class="flex gap-2" aria-label="Continue watching scroll controls">
         <button
@@ -108,7 +111,7 @@ watch(
     </div>
 
     <div v-if="sortedItems.length === 0" class="glass-panel rounded-[2rem] border border-white/10 p-6 text-white/56 sm:p-8">
-      Recent VOD plays will appear here after you start an episode.
+      {{ props.emptyMessage ?? 'Recent VOD plays will appear here after you start an episode.' }}
     </div>
 
     <div v-else class="relative">

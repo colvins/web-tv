@@ -6,7 +6,6 @@ import {
   Home,
   MonitorPlay,
   PlaySquare,
-  Search,
   Settings,
   type LucideIcon,
 } from 'lucide-vue-next'
@@ -20,13 +19,11 @@ type NavItem = {
 
 const route = useRoute()
 const isVodCatalogRoute = computed(() => route.name === 'vod')
-const isLiveRoute = computed(() => route.path === '/live' || route.path.startsWith('/live/'))
 
 const navItems: NavItem[] = [
   { label: 'Home', path: '/', icon: Home },
   { label: 'Live', path: '/live', icon: MonitorPlay },
   { label: 'VOD', path: '/vod', icon: PlaySquare },
-  { label: 'Search', path: '/search', icon: Search },
   { label: 'History', path: '/history', icon: Clock3 },
   { label: 'Settings', path: '/settings', icon: Settings },
 ]
@@ -103,20 +100,13 @@ function isNavItemActive(path: string) {
           id="vod-page-toolbar-desktop"
           class="hidden sm:flex sm:w-auto sm:max-w-[11rem] lg:max-w-none"
         ></div>
-        <RouterLink
-          v-else-if="!isLiveRoute"
-          to="/search"
-          class="tv-focus-card glass-panel hidden min-h-12 rounded-3xl px-5 py-3 text-sm font-medium text-white/78 sm:block"
-        >
-          Search library
-        </RouterLink>
       </header>
 
       <RouterView />
     </main>
 
     <nav
-      class="glass-panel fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 grid grid-cols-6 rounded-[2rem] p-2 lg:hidden"
+      class="glass-panel fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 grid grid-cols-5 rounded-[2rem] p-2 lg:hidden"
       aria-label="Mobile navigation"
     >
       <RouterLink
