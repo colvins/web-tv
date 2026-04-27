@@ -81,7 +81,7 @@ function isNavItemActive(path: string) {
         class="mb-6 flex flex-col gap-4 sm:mb-8"
         :class="
           isVodCatalogRoute
-            ? 'min-h-[3rem] justify-start pr-[13.5rem] sm:min-h-[3.5rem] sm:pr-[15rem] lg:pr-0 xl:flex-row xl:items-end xl:justify-between'
+            ? 'min-h-[3rem] justify-start pr-[11.25rem] sm:min-h-[3.5rem] sm:pr-[12.75rem] lg:pr-0 xl:flex-row xl:items-end xl:justify-between'
             : 'sm:flex-row sm:items-center sm:justify-between'
         "
       >
@@ -94,7 +94,7 @@ function isNavItemActive(path: string) {
         <div
           v-if="isVodCatalogRoute"
           id="vod-page-toolbar"
-          class="fixed right-5 top-[calc(env(safe-area-inset-top)+1rem)] z-20 flex w-[12.5rem] justify-end sm:right-8 sm:top-8 sm:w-[14rem] lg:right-10 lg:top-6 lg:static lg:w-full xl:max-w-[60rem]"
+          class="fixed right-5 top-[calc(env(safe-area-inset-top)+1rem)] z-20 flex w-[10.25rem] justify-end sm:right-8 sm:top-8 sm:w-[11.75rem] lg:right-10 lg:top-6 lg:static lg:w-full xl:max-w-[60rem]"
         ></div>
         <RouterLink
           v-else
