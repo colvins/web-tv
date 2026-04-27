@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import html
 import json
 import re
@@ -11,13 +10,14 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import source_snapshots
+from app.db.models import VodSite
 from app.services.source_configs import get_source_config
+from app.services.vod_categories import list_categories_for_source
 
 REQUEST_TIMEOUT_SECONDS = 10
-MAX_CATEGORY_VALIDATION_CONCURRENCY = 6
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -32,11 +32,16 @@ class CollectorSiteCandidate:
 
 async def list_categories(db: AsyncSession, source_config_id: uuid.UUID) -> dict[str, Any]:
     candidate = await _resolve_candidate_site(db, source_config_id)
-    payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list"}))
-    categories = await _validated_categories(candidate, _parse_categories(payload))
+    stored_categories = await list_categories_for_source(
+        db,
+        source_config_id=source_config_id,
+        site_key=candidate.site_key or "",
+    )
+    categories = _category_rows(stored_categories)
     return {
         "site": _serialize_site(candidate),
         "categories": categories,
+        "reason": None if categories else "No stored VOD categories are available for this source yet. Re-import the source to sync category metadata.",
     }
 
 
@@ -51,7 +56,6 @@ async def list_vods(
     if type_id:
         params["t"] = type_id
     payload = await _fetch_json(_build_url(candidate.api_url, params))
-    payload = await _with_missing_posters(candidate, payload)
     return _catalog_page(candidate, payload)
 
 
@@ -67,7 +71,6 @@ async def search_vods(
 
     candidate = await _resolve_candidate_site(db, source_config_id)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list", "wd": text, "pg": page}))
-    payload = await _with_missing_posters(candidate, payload)
     return _catalog_page(candidate, payload)
 
 
@@ -136,71 +139,30 @@ async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID)
     if not source_config.enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Source config must be enabled for VOD browsing")
 
-    snapshot = await source_snapshots.require_latest_source_snapshot(db, source_config_id)
-    root_config = snapshot.root_config if isinstance(snapshot.root_config, dict) else {}
-    sites = root_config.get("sites")
-    if not isinstance(sites, list):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Latest source snapshot has no sites list")
-
-    candidates = _collector_candidates(sites, source_config.id, source_config.name)
-    if not candidates:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No generic MacCMS-style JSON collector site was found in the latest source snapshot",
+    rows = await db.scalars(
+        select(VodSite)
+        .where(
+            VodSite.source_config_id == source_config_id,
+            VodSite.enabled.is_(True),
         )
-    return candidates[0]
-
-
-def _collector_candidates(
-    sites: list[Any],
-    source_config_id: uuid.UUID,
-    source_name: str,
-) -> list[CollectorSiteCandidate]:
-    ranked: list[tuple[int, int, CollectorSiteCandidate]] = []
-    for index, item in enumerate(sites):
-        if not isinstance(item, dict):
+        .order_by(VodSite.sort_order.asc(), VodSite.site_name.asc())
+    )
+    for site in rows:
+        api_url = _http_url(site.api)
+        if not api_url or not _looks_like_maccms_collector(api_url):
             continue
-        ext = item.get("ext")
-        ext_api = ext.get("api") if isinstance(ext, dict) else None
-
-        direct_api = _http_url(item.get("api"))
-        wrapped_api = _http_url(ext_api)
-        if direct_api:
-            candidate_url = direct_api
-        elif wrapped_api:
-            candidate_url = wrapped_api
-        else:
-            continue
-
-        if not _looks_like_maccms_collector(candidate_url):
-            continue
-
-        score = 0
-        lowered_url = candidate_url.lower()
-        if isinstance(ext, dict) and str(ext.get("sp") or "").lower() == "caiji":
-            score += 100
-        if "api.php/provide/vod" in lowered_url:
-            score += 80
-        if candidate_url.startswith("https://"):
-            score += 20
-        if "ac=list" in lowered_url:
-            score += 10
-
-        ranked.append(
-            (
-                -score,
-                index,
-                CollectorSiteCandidate(
-                    source_config_id=source_config_id,
-                    source_name=source_name,
-                    site_key=_string_or_none(item.get("key")),
-                    site_name=_string_or_none(item.get("name")),
-                    api_url=candidate_url,
-                ),
-            )
+        return CollectorSiteCandidate(
+            source_config_id=source_config.id,
+            source_name=source_config.name,
+            site_key=site.site_key,
+            site_name=site.site_name,
+            api_url=api_url,
         )
-    ranked.sort(key=lambda item: (item[0], item[1]))
-    return [candidate for _, _, candidate in ranked]
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="No enabled MacCMS-style VOD collector site is synced for this source. Re-import the source first.",
+    )
 
 
 def _looks_like_maccms_collector(url: str) -> bool:
@@ -266,61 +228,6 @@ def _build_url(url: str, updates: dict[str, str | int | None]) -> str:
         else:
             query[key] = str(value)
     return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-
-
-def _parse_categories(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    categories = payload.get("class")
-    if not isinstance(categories, list):
-        return []
-
-    parsed: list[dict[str, Any]] = []
-    for item in categories:
-        if not isinstance(item, dict):
-            continue
-        parsed.append(
-            {
-                "type_id": item.get("type_id"),
-                "type_name": _string_or_none(item.get("type_name")),
-                "parent_type_id": item.get("type_pid", item.get("parent_id", item.get("type_id_1"))),
-                "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
-                "has_content": True,
-            }
-        )
-    return parsed
-
-
-async def _validated_categories(
-    candidate: CollectorSiteCandidate,
-    categories: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    if not categories:
-        return []
-
-    semaphore = asyncio.Semaphore(MAX_CATEGORY_VALIDATION_CONCURRENCY)
-
-    async def validate(category: dict[str, Any]) -> dict[str, Any] | None:
-        type_id = category.get("type_id")
-        if type_id in (None, ""):
-            return category
-        async with semaphore:
-            try:
-                has_content = await _category_has_content(candidate, str(type_id))
-            except HTTPException:
-                return category
-        if not has_content:
-            return None
-        next_category = dict(category)
-        next_category["has_content"] = True
-        return next_category
-
-    validated = await asyncio.gather(*(validate(category) for category in categories))
-    return [category for category in validated if category is not None]
-
-
-async def _category_has_content(candidate: CollectorSiteCandidate, type_id: str) -> bool:
-    payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list", "t": type_id, "pg": 1}))
-    items = payload.get("list")
-    return isinstance(items, list) and len(items) > 0
 
 
 def _catalog_page(candidate: CollectorSiteCandidate, payload: dict[str, Any]) -> dict[str, Any]:
@@ -401,6 +308,45 @@ def _play_sources_summary(item: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return summaries
+
+
+def _category_rows(categories: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    synthetic_parents: list[dict[str, Any]] = []
+    synthetic_parent_ids: set[str] = set()
+
+    for category in categories:
+        type_id = str(category.type_id)
+        seen_ids.add(type_id)
+        rows.append(
+            {
+                "type_id": category.type_id,
+                "type_name": category.type_name,
+                "parent_type_id": category.parent_type_id,
+                "parent_type_name": category.parent_type_name,
+                "has_content": True,
+            }
+        )
+
+        parent_type_id = _string_or_none(category.parent_type_id)
+        parent_type_name = _string_or_none(category.parent_type_name)
+        if not parent_type_id or not parent_type_name:
+            continue
+        if parent_type_id in seen_ids or parent_type_id in synthetic_parent_ids:
+            continue
+        synthetic_parent_ids.add(parent_type_id)
+        synthetic_parents.append(
+            {
+                "type_id": parent_type_id,
+                "type_name": parent_type_name,
+                "parent_type_id": None,
+                "parent_type_name": None,
+                "has_content": True,
+            }
+        )
+
+    return [*synthetic_parents, *rows]
 
 
 def _split_sources(value: Any) -> list[str]:
@@ -543,45 +489,3 @@ def _int_value(value: Any, default: int | None = None) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-async def _with_missing_posters(candidate: CollectorSiteCandidate, payload: dict[str, Any]) -> dict[str, Any]:
-    items = payload.get("list")
-    if not isinstance(items, list):
-        return payload
-
-    missing_ids = [
-        str(item.get("vod_id"))
-        for item in items
-        if isinstance(item, dict) and item.get("vod_id") not in (None, "") and not _normalize_media_url(item.get("vod_pic"), candidate.api_url)
-    ]
-    if not missing_ids:
-        return payload
-
-    try:
-        detail_payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": ",".join(missing_ids)}))
-    except HTTPException:
-        return payload
-    detail_items = detail_payload.get("list")
-    if not isinstance(detail_items, list):
-        return payload
-
-    posters_by_id = {
-        str(item.get("vod_id")): _normalize_media_url(item.get("vod_pic"), candidate.api_url)
-        for item in detail_items
-        if isinstance(item, dict) and item.get("vod_id") not in (None, "")
-    }
-
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        vod_id = item.get("vod_id")
-        if vod_id in (None, ""):
-            continue
-        if _normalize_media_url(item.get("vod_pic"), candidate.api_url):
-            continue
-        poster = posters_by_id.get(str(vod_id))
-        if poster:
-            item["vod_pic"] = poster
-
-    return payload

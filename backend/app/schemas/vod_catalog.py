@@ -35,6 +35,7 @@ class VodCatalogItemRead(BaseModel):
 class VodCategoryListRead(BaseModel):
     site: VodCatalogSiteRead
     categories: list[VodCategoryRead]
+    reason: str | None = None
 
 
 class VodCatalogPageRead(BaseModel):

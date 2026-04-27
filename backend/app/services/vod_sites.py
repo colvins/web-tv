@@ -181,6 +181,9 @@ def _site_values(
     if not site_key or not site_name:
         return None
 
+    ext = entry.get("ext")
+    ext_api = ext.get("api") if isinstance(ext, dict) else None
+
     unknown_keys = sorted(str(key) for key in entry.keys() if str(key) not in UNKNOWN_SITE_FIELDS)
     risky_keys = [key for key in ("spider", "jar", "js", "python", "ext") if key in entry]
     notes = ["Catalog metadata only; site API and executable fields were not called."]
@@ -195,7 +198,7 @@ def _site_values(
         "site_key": site_key,
         "site_name": site_name,
         "site_type": _int_or_none(entry.get("type")),
-        "api": _string_or_none(entry.get("api")),
+        "api": _string_or_none(entry.get("api")) or _string_or_none(ext_api),
         "searchable": _bool_or_none(entry.get("searchable")),
         "changeable": _bool_or_none(entry.get("changeable")),
         "quick_search": _bool_or_none(entry.get("quickSearch", entry.get("quick_search"))),

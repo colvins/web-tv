@@ -12,6 +12,7 @@ from app.db.models.content import (
     SpiderArtifact,
     SpiderArtifactAnalysis,
     VodCache,
+    VodCategory,
     VodSite,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "SpiderArtifact",
     "SpiderArtifactAnalysis",
     "VodCache",
+    "VodCategory",
     "VodSite",
 ]

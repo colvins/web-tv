@@ -24,6 +24,7 @@ class SourceConfig(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     import_jobs: Mapped[list["ImportJob"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     vod_sites: Mapped[list["VodSite"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
+    vod_categories: Mapped[list["VodCategory"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     snapshots: Mapped[list["SourceSnapshot"]] = relationship(back_populates="source_config", cascade="all, delete-orphan")
     live_channel_groups: Mapped[list["LiveChannelGroup"]] = relationship(
         back_populates="source_config",
@@ -239,6 +240,31 @@ class VodSite(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("source_config_id", "site_key", name="uq_vod_sites_source_site_key"),
         Index("ix_vod_sites_source_sort", "source_config_id", "sort_order"),
         Index("ix_vod_sites_enabled_sort", "enabled", "sort_order"),
+    )
+
+
+class VodCategory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "vod_categories"
+
+    source_config_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_configs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    site_key: Mapped[str] = mapped_column(String(180), nullable=False, index=True)
+    type_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    type_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    parent_type_id: Mapped[str | None] = mapped_column(String(120))
+    parent_type_name: Mapped[str | None] = mapped_column(String(240))
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+
+    source_config: Mapped[SourceConfig] = relationship(back_populates="vod_categories")
+
+    __table_args__ = (
+        UniqueConstraint("source_config_id", "site_key", "type_id", name="uq_vod_categories_source_site_type"),
+        Index("ix_vod_categories_source_site_sort", "source_config_id", "site_key", "sort_order"),
+        Index("ix_vod_categories_enabled_sort", "enabled", "sort_order"),
     )
 
 

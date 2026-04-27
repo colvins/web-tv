@@ -20,6 +20,7 @@ from app.services.source_detection import (
 )
 from app.services.source_configs import get_source_config
 from app.services.source_snapshots import store_source_snapshot_with_overrides
+from app.services.vod_categories import sync_categories_from_root_config
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 RAW_PREVIEW_CHARS = 2000
@@ -109,12 +110,21 @@ async def import_source_config(db: AsyncSession, source_config_id: uuid.UUID) ->
             import_job_id=job.id,
             root_config=snapshot_root_config,
         )
+        await sync_categories_from_root_config(
+            db,
+            source_config_id=source_config.id,
+            root_config=snapshot_root_config,
+            preloaded_categories_by_site_key=result["categories_by_site_key"],
+        )
     await db.commit()
     await db.refresh(job)
     return job
 
 
-async def _download_source(source_name: str, url: str) -> dict[str, str | int | float | bytes | list[str] | dict[str, Any] | None]:
+async def _download_source(
+    source_name: str,
+    url: str,
+) -> dict[str, str | int | float | bytes | list[str] | dict[str, Any] | None]:
     hasher = hashlib.sha256()
     chunks: list[bytes] = []
     total = 0
@@ -143,12 +153,14 @@ async def _download_source(source_name: str, url: str) -> dict[str, str | int | 
     recovered_format_override: str | None = None
     snapshot_warnings: list[str] = []
     detection_note = detection.detection_note
+    categories_by_site_key: dict[str, list[dict[str, Any]]] = {}
 
     collector_probe = await _probe_direct_collector(source_name, url, raw)
     if collector_probe is not None:
         root_config_override = collector_probe["root_config"]
         recovered_format_override = "direct_maccms_collector"
         detection_note = collector_probe["detection_note"]
+        categories_by_site_key = collector_probe["categories_by_site_key"]
         snapshot_warnings.append("Direct MacCMS-style collector URL was normalized into a synthetic sites[] root_config.")
 
     return {
@@ -163,6 +175,7 @@ async def _download_source(source_name: str, url: str) -> dict[str, str | int | 
         "root_config_override": root_config_override,
         "recovered_format_override": recovered_format_override,
         "snapshot_warnings": snapshot_warnings,
+        "categories_by_site_key": categories_by_site_key,
     }
 
 
@@ -185,12 +198,16 @@ async def _probe_direct_collector(
         source_url=source_url,
         category_samples=category_samples,
     )
+    site_key = str(root_config["sites"][0]["key"])
     note = "Direct MacCMS-style VOD collector detected and validated with ac=list metadata only."
     if category_samples:
         note = f"{note} Sample categories: {', '.join(category_samples[:5])}."
     return {
         "root_config": root_config,
         "detection_note": note,
+        "categories_by_site_key": {
+            site_key: _categories_from_metadata(metadata),
+        },
     }
 
 
@@ -243,6 +260,38 @@ def _category_samples(payload: dict[str, Any]) -> list[str]:
         if text:
             samples.append(text)
     return samples
+
+
+def _categories_from_metadata(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    categories = payload.get("class")
+    if not isinstance(categories, list):
+        return []
+
+    parsed: list[dict[str, Any]] = []
+    for index, item in enumerate(categories):
+        if not isinstance(item, dict):
+            continue
+        type_id = _string_or_none(item.get("type_id"))
+        type_name = _string_or_none(item.get("type_name"))
+        if not type_id or not type_name:
+            continue
+        parsed.append(
+            {
+                "type_id": type_id,
+                "type_name": type_name,
+                "parent_type_id": _string_or_none(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
+                "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
+                "sort_order": index,
+            }
+        )
+    return parsed
+
+
+def _string_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _detected_source_type(detected_format: str | None) -> str:
