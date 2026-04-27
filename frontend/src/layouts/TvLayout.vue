@@ -92,7 +92,7 @@ function isNavItemActive(path: string) {
               {{ pageTitle }}
             </h1>
             <div
-              id="vod-page-toolbar"
+              id="vod-page-toolbar-mobile"
               class="flex shrink-0 justify-end sm:hidden"
             ></div>
           </div>
@@ -102,7 +102,7 @@ function isNavItemActive(path: string) {
         </div>
         <div
           v-if="isVodCatalogRoute"
-          id="vod-page-toolbar"
+          id="vod-page-toolbar-desktop"
           class="hidden sm:flex sm:w-auto sm:max-w-[11rem] lg:max-w-none"
         ></div>
         <RouterLink

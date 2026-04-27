@@ -56,6 +56,7 @@ const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
 const enabledSources = computed(() => sources.value.filter((source) => source.enabled && source.vod_site_count > 0))
+const toolbarTarget = computed(() => (isDesktopLayout.value ? '#vod-page-toolbar-desktop' : '#vod-page-toolbar-mobile'))
 
 function syncLayoutMode() {
   isDesktopLayout.value = mediaQuery?.matches ?? window.innerWidth >= 768
@@ -338,7 +339,7 @@ watch(
 </script>
 
 <template>
-  <Teleport to="#vod-page-toolbar">
+  <Teleport :to="toolbarTarget">
     <VodSourceSelector
       :compact="!isDesktopLayout"
       :search-query="searchQuery"
