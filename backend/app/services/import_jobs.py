@@ -279,7 +279,7 @@ def _categories_from_metadata(payload: dict[str, Any]) -> list[dict[str, Any]]:
             {
                 "type_id": type_id,
                 "type_name": type_name,
-                "parent_type_id": _string_or_none(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
+                "parent_type_id": _normalized_parent_type_id(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
                 "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
                 "sort_order": index,
             }
@@ -292,6 +292,13 @@ def _string_or_none(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalized_parent_type_id(value: Any) -> str | None:
+    text = _string_or_none(value)
+    if text in {None, "0"}:
+        return None
+    return text
 
 
 def _detected_source_type(detected_format: str | None) -> str:

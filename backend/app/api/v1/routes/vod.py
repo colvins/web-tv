@@ -13,46 +13,51 @@ router = APIRouter(prefix="/vod", tags=["vod"])
 @router.get("/categories", response_model=VodCategoryListRead)
 async def get_vod_categories(
     source_config_id: uuid.UUID = Query(...),
+    site_key: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> VodCategoryListRead:
-    return await vod_catalog.list_categories(db, source_config_id)
+    return await vod_catalog.list_categories(db, source_config_id, site_key)
 
 
 @router.get("/list", response_model=VodCatalogPageRead)
 async def get_vod_list(
     source_config_id: uuid.UUID = Query(...),
+    site_key: str | None = Query(default=None),
     type_id: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     db: AsyncSession = Depends(get_db),
 ) -> VodCatalogPageRead:
-    return await vod_catalog.list_vods(db, source_config_id, type_id, page)
+    return await vod_catalog.list_vods(db, source_config_id, site_key, type_id, page)
 
 
 @router.get("/search", response_model=VodCatalogPageRead)
 async def search_vod(
     source_config_id: uuid.UUID = Query(...),
+    site_key: str | None = Query(default=None),
     q: str = Query(..., min_length=1),
     page: int = Query(default=1, ge=1),
     db: AsyncSession = Depends(get_db),
 ) -> VodCatalogPageRead:
-    return await vod_catalog.search_vods(db, source_config_id, q, page)
+    return await vod_catalog.search_vods(db, source_config_id, site_key, q, page)
 
 
 @router.get("/detail", response_model=VodCatalogDetailRead)
 async def get_vod_detail(
     source_config_id: uuid.UUID = Query(...),
+    site_key: str | None = Query(default=None),
     vod_id: str = Query(..., min_length=1),
     db: AsyncSession = Depends(get_db),
 ) -> VodCatalogDetailRead:
-    return await vod_catalog.get_vod_detail(db, source_config_id, vod_id)
+    return await vod_catalog.get_vod_detail(db, source_config_id, site_key, vod_id)
 
 
 @router.get("/episode-play", response_model=VodEpisodePlayRead)
 async def get_vod_episode_play(
     source_config_id: uuid.UUID = Query(...),
+    site_key: str | None = Query(default=None),
     vod_id: str = Query(..., min_length=1),
     source_name: str = Query(..., min_length=1),
     episode_index: int = Query(..., ge=0),
     db: AsyncSession = Depends(get_db),
 ) -> VodEpisodePlayRead:
-    return await vod_catalog.get_episode_play(db, source_config_id, vod_id, source_name, episode_index)
+    return await vod_catalog.get_episode_play(db, source_config_id, site_key, vod_id, source_name, episode_index)

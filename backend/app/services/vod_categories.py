@@ -10,6 +10,11 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import VodCategory
+from app.services.source_detection import (
+    build_indexed_site_key,
+    looks_like_direct_maccms_collector_url,
+    normalize_collector_api_url,
+)
 
 REQUEST_TIMEOUT_SECONDS = 20.0
 IMPORT_HEADERS = {
@@ -51,11 +56,11 @@ async def sync_categories_from_root_config(
     for index, item in enumerate(sites):
         if not isinstance(item, dict):
             continue
-        site_key = _string_or_none(item.get("key"))
         ext = item.get("ext")
         ext_api = ext.get("api") if isinstance(ext, dict) else None
-        api_url = _string_or_none(item.get("api")) or _string_or_none(ext_api)
-        if not site_key or not api_url or not _looks_like_maccms_collector(api_url):
+        api_url = normalize_collector_api_url(_string_or_none(item.get("api")) or _string_or_none(ext_api))
+        site_key = build_indexed_site_key(item.get("key"), api_url)
+        if not site_key or not api_url or not looks_like_direct_maccms_collector_url(api_url):
             continue
 
         seen_site_keys.add(site_key)
@@ -98,7 +103,7 @@ async def _fetch_categories(api_url: str) -> list[dict[str, Any]]:
             {
                 "type_id": type_id,
                 "type_name": type_name,
-                "parent_type_id": _string_or_none(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
+                "parent_type_id": _normalized_parent_type_id(item.get("type_pid", item.get("parent_id", item.get("type_id_1")))),
                 "parent_type_name": _string_or_none(item.get("parent_name") or item.get("type_name_1")),
                 "sort_order": index,
             }
@@ -187,17 +192,15 @@ def _build_url(url: str, updates: dict[str, str | int | None]) -> str:
     return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 
-def _looks_like_maccms_collector(url: str) -> bool:
-    lowered = url.lower()
-    return (
-        "api.php/provide/vod" in lowered
-        or ("provide/vod" in lowered and "ac=" in lowered)
-        or "api_mac10.php" in lowered
-    )
-
-
 def _string_or_none(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalized_parent_type_id(value: Any) -> str | None:
+    text = _string_or_none(value)
+    if text in {None, "0"}:
+        return None
+    return text

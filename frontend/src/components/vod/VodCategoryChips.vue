@@ -19,7 +19,7 @@ const normalizedCategories = computed(() =>
     ...category,
     id: category.type_id === null || category.type_id === undefined ? null : String(category.type_id),
     parentId:
-      category.parent_type_id === null || category.parent_type_id === undefined
+      category.parent_type_id === null || category.parent_type_id === undefined || String(category.parent_type_id) === '0'
         ? null
         : String(category.parent_type_id),
   })),

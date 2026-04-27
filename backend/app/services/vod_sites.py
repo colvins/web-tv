@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ImportJob, SourceConfig, VodSite
 from app.services.import_jobs import MAX_IMPORT_BYTES, REQUEST_TIMEOUT_SECONDS
 from app.services.app_settings import clear_current_vod_site_if_matches
-from app.services.source_detection import recover_json_config
+from app.services.source_detection import (
+    build_host_derived_source_name,
+    build_indexed_site_key,
+    looks_like_direct_maccms_collector_url,
+    normalize_collector_api_url,
+    recover_json_config,
+)
 from app.services.source_configs import get_source_config
 
 SUPPORTED_FORMATS = {"catvod_json", "plain_json", "base64_json", "binary_wrapped"}
@@ -101,7 +107,10 @@ async def extract_sites_for_source(db: AsyncSession, source_config_id: uuid.UUID
 async def count_vod_sites_by_source(db: AsyncSession) -> dict[uuid.UUID, int]:
     rows = await db.execute(
         select(VodSite.source_config_id, func.count(VodSite.id))
-        .where(VodSite.source_config_id.is_not(None))
+        .where(
+            VodSite.source_config_id.is_not(None),
+            VodSite.enabled.is_(True),
+        )
         .group_by(VodSite.source_config_id)
     )
     return {source_id: count for source_id, count in rows if source_id is not None}
@@ -176,13 +185,16 @@ def _site_values(
     entry: dict[str, Any],
     index: int,
 ) -> dict[str, Any] | None:
-    site_key = _string_or_none(entry.get("key"))
-    site_name = _string_or_none(entry.get("name"))
-    if not site_key or not site_name:
-        return None
-
     ext = entry.get("ext")
     ext_api = ext.get("api") if isinstance(ext, dict) else None
+    api_url = normalize_collector_api_url(_string_or_none(entry.get("api")) or _string_or_none(ext_api))
+    if not api_url or not looks_like_direct_maccms_collector_url(api_url):
+        return None
+
+    site_key = build_indexed_site_key(entry.get("key"), api_url)
+    site_name = _string_or_none(entry.get("name")) or build_host_derived_source_name(api_url)
+    if not site_key or not site_name:
+        return None
 
     unknown_keys = sorted(str(key) for key in entry.keys() if str(key) not in UNKNOWN_SITE_FIELDS)
     risky_keys = [key for key in ("spider", "jar", "js", "python", "ext") if key in entry]
@@ -198,7 +210,7 @@ def _site_values(
         "site_key": site_key,
         "site_name": site_name,
         "site_type": _int_or_none(entry.get("type")),
-        "api": _string_or_none(entry.get("api")) or _string_or_none(ext_api),
+        "api": api_url,
         "searchable": _bool_or_none(entry.get("searchable")),
         "changeable": _bool_or_none(entry.get("changeable")),
         "quick_search": _bool_or_none(entry.get("quickSearch", entry.get("quick_search"))),

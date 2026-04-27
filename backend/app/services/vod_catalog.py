@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import VodSite
+from app.services.source_detection import looks_like_direct_maccms_collector_url
 from app.services.source_configs import get_source_config
 from app.services.vod_categories import list_categories_for_source
 
@@ -30,8 +31,12 @@ class CollectorSiteCandidate:
     api_url: str
 
 
-async def list_categories(db: AsyncSession, source_config_id: uuid.UUID) -> dict[str, Any]:
-    candidate = await _resolve_candidate_site(db, source_config_id)
+async def list_categories(
+    db: AsyncSession,
+    source_config_id: uuid.UUID,
+    site_key: str | None,
+) -> dict[str, Any]:
+    candidate = await _resolve_candidate_site(db, source_config_id, site_key)
     stored_categories = await list_categories_for_source(
         db,
         source_config_id=source_config_id,
@@ -48,10 +53,11 @@ async def list_categories(db: AsyncSession, source_config_id: uuid.UUID) -> dict
 async def list_vods(
     db: AsyncSession,
     source_config_id: uuid.UUID,
+    site_key: str | None,
     type_id: str | None,
     page: int,
 ) -> dict[str, Any]:
-    candidate = await _resolve_candidate_site(db, source_config_id)
+    candidate = await _resolve_candidate_site(db, source_config_id, site_key)
     params: dict[str, str | int | None] = {"ac": "list", "pg": page}
     if type_id:
         params["t"] = type_id
@@ -62,6 +68,7 @@ async def list_vods(
 async def search_vods(
     db: AsyncSession,
     source_config_id: uuid.UUID,
+    site_key: str | None,
     query: str,
     page: int,
 ) -> dict[str, Any]:
@@ -69,7 +76,7 @@ async def search_vods(
     if not text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Search query cannot be empty")
 
-    candidate = await _resolve_candidate_site(db, source_config_id)
+    candidate = await _resolve_candidate_site(db, source_config_id, site_key)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "list", "wd": text, "pg": page}))
     return _catalog_page(candidate, payload)
 
@@ -77,13 +84,14 @@ async def search_vods(
 async def get_vod_detail(
     db: AsyncSession,
     source_config_id: uuid.UUID,
+    site_key: str | None,
     vod_id: str,
 ) -> dict[str, Any]:
     text = vod_id.strip()
     if not text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="vod_id cannot be empty")
 
-    candidate = await _resolve_candidate_site(db, source_config_id)
+    candidate = await _resolve_candidate_site(db, source_config_id, site_key)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": text}))
     return _catalog_detail(candidate, _select_detail_item(payload, text))
 
@@ -91,6 +99,7 @@ async def get_vod_detail(
 async def get_episode_play(
     db: AsyncSession,
     source_config_id: uuid.UUID,
+    site_key: str | None,
     vod_id: str,
     source_name: str,
     episode_index: int,
@@ -104,7 +113,7 @@ async def get_episode_play(
     if episode_index < 0:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="episode_index must be >= 0")
 
-    candidate = await _resolve_candidate_site(db, source_config_id)
+    candidate = await _resolve_candidate_site(db, source_config_id, site_key)
     payload = await _fetch_json(_build_url(candidate.api_url, {"ac": "detail", "ids": text}))
     item = _select_detail_item(payload, text)
     play_groups = _play_source_groups(item)
@@ -134,7 +143,11 @@ async def get_episode_play(
     }
 
 
-async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID) -> CollectorSiteCandidate:
+async def _resolve_candidate_site(
+    db: AsyncSession,
+    source_config_id: uuid.UUID,
+    site_key: str | None,
+) -> CollectorSiteCandidate:
     source_config = await get_source_config(db, source_config_id)
     if not source_config.enabled:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Source config must be enabled for VOD browsing")
@@ -148,8 +161,10 @@ async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID)
         .order_by(VodSite.sort_order.asc(), VodSite.site_name.asc())
     )
     for site in rows:
+        if site_key and site.site_key != site_key:
+            continue
         api_url = _http_url(site.api)
-        if not api_url or not _looks_like_maccms_collector(api_url):
+        if not api_url or not looks_like_direct_maccms_collector_url(api_url):
             continue
         return CollectorSiteCandidate(
             source_config_id=source_config.id,
@@ -161,16 +176,7 @@ async def _resolve_candidate_site(db: AsyncSession, source_config_id: uuid.UUID)
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="No enabled MacCMS-style VOD collector site is synced for this source. Re-import the source first.",
-    )
-
-
-def _looks_like_maccms_collector(url: str) -> bool:
-    lowered = url.lower()
-    return (
-        "api.php/provide/vod" in lowered
-        or ("provide/vod" in lowered and "ac=" in lowered)
-        or "api_mac10.php" in lowered
+        detail="No enabled indexed VOD collector site is synced for this source.",
     )
 
 
@@ -470,7 +476,7 @@ def _normalize_media_url(value: Any, base_url: str | None) -> str | None:
         return text
     if text.startswith("//"):
         return f"https:{text}"
-    if base_url and text.startswith("/"):
+    if base_url:
         return urljoin(base_url, text)
     return None
 

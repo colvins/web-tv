@@ -1,10 +1,11 @@
+import hashlib
 import base64
 import binascii
 import json
-import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 CATVOD_KEYS = {"sites", "lives", "parses", "flags", "spider", "wallpaper", "logo", "rules", "hosts"}
 BASE64_RE = re.compile(r"^[A-Za-z0-9+/=\s_-]{24,}$")
@@ -118,11 +119,12 @@ def build_direct_collector_root_config(
     source_url: str,
     category_samples: list[str] | None = None,
 ) -> dict[str, Any]:
+    normalized_api = normalize_collector_api_url(source_url)
     site_entry: dict[str, Any] = {
-        "key": build_safe_site_key(source_name, source_url),
-        "name": source_name,
+        "key": build_indexed_site_key(None, normalized_api),
+        "name": source_name.strip() or build_host_derived_source_name(normalized_api),
         "type": 1,
-        "api": source_url,
+        "api": normalized_api,
         "searchable": 1,
         "changeable": 0,
         "quickSearch": 1,
@@ -133,13 +135,52 @@ def build_direct_collector_root_config(
     return {"sites": [site_entry]}
 
 
-def build_safe_site_key(source_name: str, source_url: str) -> str:
-    slug_source = source_name.strip().lower() or source_url.strip().lower()
-    slug = SAFE_KEY_RE.sub("-", slug_source).strip("-")
-    if not slug:
-        slug = "collector"
-    digest = hashlib.sha1(source_url.encode("utf-8")).hexdigest()[:8]
-    return f"{slug[:32]}-{digest}"
+def build_indexed_site_key(site_key: Any | None, api_url: str | None) -> str | None:
+    explicit = sanitize_site_key(site_key)
+    if explicit:
+        return explicit
+    normalized_api = normalize_collector_api_url(api_url)
+    if not normalized_api:
+        return None
+    digest = hashlib.sha1(normalized_api.encode("utf-8")).hexdigest()[:12]
+    return f"collector_{digest}"
+
+
+def sanitize_site_key(value: Any | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    slug = SAFE_KEY_RE.sub("-", text).strip("-")
+    return slug or None
+
+
+def normalize_collector_api_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    text = str(url).strip()
+    parsed = urlparse(text)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return None
+    normalized_path = parsed.path or "/"
+    normalized_query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)), doseq=True)
+    return urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            normalized_path,
+            "",
+            normalized_query,
+            "",
+        )
+    )
+
+
+def build_host_derived_source_name(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    return host or "Collector"
 
 
 def _decode_text(content: bytes) -> str:
