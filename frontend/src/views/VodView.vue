@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Teleport, computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -16,6 +16,8 @@ import {
 import { ApiError } from '@/api/client'
 import VodDesktopLayout from '@/components/vod/VodDesktopLayout.vue'
 import VodMobileLayout from '@/components/vod/VodMobileLayout.vue'
+import VodSourceSelector from '@/components/vod/VodSourceSelector.vue'
+import { vodPageHeaderTitle } from '@/composables/useVodPageHeader'
 import {
   buildVodCatalogQuery,
   getVodCatalogRouteKey,
@@ -326,6 +328,14 @@ function onSourceChange(value: string | null) {
 }
 
 watch(
+  headerSourceName,
+  (value) => {
+    vodPageHeaderTitle.value = value || 'VOD'
+  },
+  { immediate: true },
+)
+
+watch(
   () => route.query,
   () => {
     if (!bootstrapped.value) return
@@ -342,6 +352,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   mediaQuery?.removeEventListener('change', syncLayoutMode)
+  vodPageHeaderTitle.value = 'VOD'
 })
 
 watch(
@@ -353,23 +364,34 @@ watch(
 </script>
 
 <template>
+  <Teleport to="#vod-page-toolbar">
+    <VodSourceSelector
+      :compact="!isDesktopLayout"
+      :source-options="sourceOptions"
+      :selected-source-id="selectedSourceId"
+      :search-query="searchQuery"
+      :loading="loading"
+      :source-loading="sourceLoading"
+      :search-loading="searchLoading"
+      :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
+      @refresh="bootstrap"
+      @update:selected-source-id="onSourceChange"
+      @update:search-query="(value) => (searchQuery = value)"
+      @search="runSearch(1)"
+      @reset="selectCategory(null)"
+    />
+  </Teleport>
+
   <VodDesktopLayout
     v-if="isDesktopLayout"
-    :header-site-name="headerSiteName"
-    :header-source-name="headerSourceName"
     :page-label="pageLabel"
-    :selected-site-key="pageResponse?.site.site_key ?? categoriesResponse?.site.site_key ?? null"
-    :total-results="pageResponse?.total ?? 0"
     :load-error="loadError"
     :loading="loading"
     :no-usable-source="noUsableSource"
     :selected-source-id="selectedSourceId"
     :selected-category-id="selectedCategoryId"
-    :source-options="sourceOptions"
-    :search-query="searchQuery"
     :source-loading="sourceLoading"
     :search-loading="searchLoading"
-    :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
     :categories="categoriesResponse?.categories ?? []"
     :items="pageResponse?.items ?? []"
     :can-go-prev="canGoPrev"
@@ -377,11 +399,6 @@ watch(
     :is-search-mode="isSearchMode"
     :submitted-query="submittedQuery"
     :pagecount="pageResponse?.pagecount ?? 0"
-    @refresh="bootstrap"
-    @update:selected-source-id="onSourceChange"
-    @update:search-query="(value) => (searchQuery = value)"
-    @search="runSearch(1)"
-    @reset="selectCategory(null)"
     @select-category="selectCategory"
     @select-item="openDetail"
     @change-page="changePage"
@@ -389,21 +406,14 @@ watch(
 
   <VodMobileLayout
     v-else
-    :header-site-name="headerSiteName"
-    :header-source-name="headerSourceName"
     :page-label="pageLabel"
-    :selected-site-key="pageResponse?.site.site_key ?? categoriesResponse?.site.site_key ?? null"
-    :total-results="pageResponse?.total ?? 0"
     :load-error="loadError"
     :loading="loading"
     :no-usable-source="noUsableSource"
     :selected-source-id="selectedSourceId"
     :selected-category-id="selectedCategoryId"
-    :source-options="sourceOptions"
-    :search-query="searchQuery"
     :source-loading="sourceLoading"
     :search-loading="searchLoading"
-    :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
     :categories="categoriesResponse?.categories ?? []"
     :items="pageResponse?.items ?? []"
     :can-go-prev="canGoPrev"
@@ -411,11 +421,6 @@ watch(
     :is-search-mode="isSearchMode"
     :submitted-query="submittedQuery"
     :pagecount="pageResponse?.pagecount ?? 0"
-    @refresh="bootstrap"
-    @update:selected-source-id="onSourceChange"
-    @update:search-query="(value) => (searchQuery = value)"
-    @search="runSearch(1)"
-    @reset="selectCategory(null)"
     @select-category="selectCategory"
     @select-item="openDetail"
     @change-page="changePage"

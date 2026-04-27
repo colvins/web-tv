@@ -4,24 +4,16 @@ import { NButton } from 'naive-ui'
 import type { VodBrowseCategory, VodBrowseItem } from '@/api/sourceConfigs'
 import VodCatalogGrid from '@/components/vod/VodCatalogGrid.vue'
 import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
-import VodSourceSelector from '@/components/vod/VodSourceSelector.vue'
 
 defineProps<{
-  headerSiteName: string
-  headerSourceName: string
   pageLabel: string
-  selectedSiteKey: string | null
-  totalResults: number
   loadError: string | null
   loading: boolean
   noUsableSource: boolean
   selectedSourceId: string | null
   selectedCategoryId: string | null
-  sourceOptions: Array<{ label: string; value: string }>
-  searchQuery: string
   sourceLoading: boolean
   searchLoading: boolean
-  hasSearchFilter: boolean
   categories: VodBrowseCategory[]
   items: VodBrowseItem[]
   canGoPrev: boolean
@@ -32,11 +24,6 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  refresh: []
-  'update:selectedSourceId': [value: string | null]
-  'update:searchQuery': [value: string]
-  search: []
-  reset: []
   selectCategory: [categoryId: string | null]
   selectItem: [item: VodBrowseItem]
   changePage: [direction: -1 | 1]
@@ -45,29 +32,6 @@ const emit = defineEmits<{
 
 <template>
   <section class="grid gap-4 pb-[calc(7rem+env(safe-area-inset-bottom))]">
-    <div class="grid gap-4">
-      <div class="min-w-0">
-        <p class="text-xs uppercase tracking-[0.24em] text-white/42">WEB-TV</p>
-        <h1 class="mt-2 truncate text-2xl font-semibold text-white">{{ headerSourceName }}</h1>
-      </div>
-
-      <VodSourceSelector
-        compact
-        :source-options="sourceOptions"
-        :selected-source-id="selectedSourceId"
-        :search-query="searchQuery"
-        :loading="loading"
-        :source-loading="sourceLoading"
-        :search-loading="searchLoading"
-        :has-search-filter="hasSearchFilter"
-        @refresh="emit('refresh')"
-        @update:selected-source-id="(value) => emit('update:selectedSourceId', value)"
-        @update:search-query="(value) => emit('update:searchQuery', value)"
-        @search="emit('search')"
-        @reset="emit('reset')"
-      />
-    </div>
-
     <div v-if="loadError" class="glass-panel rounded-[1.5rem] border border-red-300/18 bg-red-400/10 p-4 text-red-100">
       {{ loadError }}
     </div>

@@ -11,6 +11,7 @@ import {
   Settings,
   type LucideIcon,
 } from 'lucide-vue-next'
+import { vodPageHeaderTitle } from '@/composables/useVodPageHeader'
 
 type NavItem = {
   label: string
@@ -19,6 +20,7 @@ type NavItem = {
 }
 
 const route = useRoute()
+const isVodCatalogRoute = computed(() => route.name === 'vod')
 
 const navItems: NavItem[] = [
   { label: 'Home', path: '/', icon: Home },
@@ -30,7 +32,12 @@ const navItems: NavItem[] = [
   { label: 'Settings', path: '/settings', icon: Settings },
 ]
 
-const pageTitle = computed(() => String(route.meta.title ?? 'web-tv'))
+const pageTitle = computed(() => {
+  if (isVodCatalogRoute.value) {
+    return vodPageHeaderTitle.value || 'VOD'
+  }
+  return String(route.meta.title ?? 'web-tv')
+})
 
 function isNavItemActive(path: string) {
   if (path === '/') {
@@ -70,14 +77,16 @@ function isNavItemActive(path: string) {
     </aside>
 
     <main class="px-5 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8 lg:ml-32 lg:px-10 lg:pt-6 xl:ml-72">
-      <header class="mb-6 flex items-center justify-between gap-4 sm:mb-8">
-        <div>
+      <header class="mb-6 flex flex-col gap-4 sm:mb-8" :class="isVodCatalogRoute ? 'xl:flex-row xl:items-end xl:justify-between' : 'sm:flex-row sm:items-center sm:justify-between'">
+        <div class="min-w-0">
           <p class="text-sm uppercase tracking-[0.32em] text-white/42">web-tv</p>
-          <h1 class="mt-2 text-3xl font-semibold tracking-normal text-white sm:text-6xl">
+          <h1 class="mt-2 truncate text-3xl font-semibold tracking-normal text-white sm:text-6xl">
             {{ pageTitle }}
           </h1>
         </div>
+        <div v-if="isVodCatalogRoute" id="vod-page-toolbar" class="w-full xl:max-w-[60rem]"></div>
         <RouterLink
+          v-else
           to="/search"
           class="tv-focus-card glass-panel hidden min-h-12 rounded-3xl px-5 py-3 text-sm font-medium text-white/78 sm:block"
         >
