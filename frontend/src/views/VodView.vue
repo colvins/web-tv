@@ -65,6 +65,39 @@ const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
 const enabledSources = computed(() => sources.value.filter((source) => source.enabled && source.vod_site_count > 0))
 
+function normalizeRouteStateCategory(
+  routeState: VodCatalogRouteState,
+  categories: VodBrowseCategoriesResponse,
+): VodCatalogRouteState {
+  const selectedCategoryId = routeState.categoryId
+  if (!selectedCategoryId) {
+    return routeState
+  }
+
+  const normalizedCategories = categories.categories.map((category) => ({
+    id: category.type_id === null || category.type_id === undefined ? null : String(category.type_id),
+    parentId:
+      category.parent_type_id === null || category.parent_type_id === undefined || String(category.parent_type_id) === '0'
+        ? null
+        : String(category.parent_type_id),
+  }))
+  const childParentIds = new Set(
+    normalizedCategories
+      .map((category) => category.parentId)
+      .filter((parentId): parentId is string => Boolean(parentId)),
+  )
+
+  if (!childParentIds.has(selectedCategoryId)) {
+    return routeState
+  }
+
+  return {
+    ...routeState,
+    categoryId: null,
+    page: 1,
+  }
+}
+
 function restoreSavedSourceId() {
   return window.localStorage.getItem(VOD_SOURCE_STORAGE_KEY)
 }
@@ -96,37 +129,35 @@ function buildCatalogRouteState(overrides: Partial<VodCatalogRouteState> = {}): 
 }
 
 async function fetchSourceCatalog(sourceId: string, routeState: VodCatalogRouteState) {
-  const [categories, page] = await Promise.all([
-    getVodCategories(sourceId),
-    routeState.query
-      ? searchVod({
-          source_config_id: sourceId,
-          q: routeState.query,
-          page: routeState.page,
-        })
-      : getVodList({
-          source_config_id: sourceId,
-          type_id: routeState.categoryId,
-          page: routeState.page,
-        }),
-  ])
-  return { categories, page }
+  const categories = await getVodCategories(sourceId)
+  const normalizedRouteState = normalizeRouteStateCategory(routeState, categories)
+  const page = normalizedRouteState.query
+    ? await searchVod({
+        source_config_id: sourceId,
+        q: normalizedRouteState.query,
+        page: normalizedRouteState.page,
+      })
+    : await getVodList({
+        source_config_id: sourceId,
+        type_id: normalizedRouteState.categoryId,
+        page: normalizedRouteState.page,
+      })
+  return { categories, page, routeState: normalizedRouteState }
 }
 
 function applyCatalogState(
   sourceId: string,
-  routeState: VodCatalogRouteState,
-  catalog: { categories: VodBrowseCategoriesResponse; page: VodBrowsePageResponse },
+  catalog: { categories: VodBrowseCategoriesResponse; page: VodBrowsePageResponse; routeState: VodCatalogRouteState },
 ) {
   selectedSourceId.value = sourceId
   persistSelectedSourceId(sourceId)
   categoriesResponse.value = catalog.categories
   pageResponse.value = catalog.page
-  selectedCategoryId.value = routeState.categoryId
-  searchQuery.value = routeState.query
-  submittedQuery.value = routeState.query
+  selectedCategoryId.value = catalog.routeState.categoryId
+  searchQuery.value = catalog.routeState.query
+  submittedQuery.value = catalog.routeState.query
   noUsableSource.value = false
-  lastLoadedRouteKey.value = getVodCatalogRouteKey({ ...routeState, sourceId })
+  lastLoadedRouteKey.value = getVodCatalogRouteKey({ ...catalog.routeState, sourceId })
 }
 
 async function bootstrap() {
@@ -150,11 +181,11 @@ async function bootstrap() {
     for (const sourceId of candidateIds) {
       try {
         const catalog = await fetchSourceCatalog(sourceId, routeState)
-        applyCatalogState(sourceId, routeState, catalog)
-        if (routeState.sourceId !== sourceId) {
+        applyCatalogState(sourceId, catalog)
+        if (routeState.sourceId !== sourceId || getVodCatalogRouteKey({ ...routeState, sourceId }) !== getVodCatalogRouteKey({ ...catalog.routeState, sourceId })) {
           await router.replace({
             name: 'vod',
-            query: buildVodCatalogQuery({ ...routeState, sourceId }),
+            query: buildVodCatalogQuery({ ...catalog.routeState, sourceId }),
           })
         }
         return
@@ -196,7 +227,13 @@ async function syncCatalogFromRoute() {
   noUsableSource.value = false
   try {
     const catalog = await fetchSourceCatalog(routeState.sourceId, routeState)
-    applyCatalogState(routeState.sourceId, routeState, catalog)
+    applyCatalogState(routeState.sourceId, catalog)
+    if (getVodCatalogRouteKey(routeState) !== getVodCatalogRouteKey(catalog.routeState)) {
+      await router.replace({
+        name: 'vod',
+        query: buildVodCatalogQuery(catalog.routeState),
+      })
+    }
   } catch (error) {
     loadError.value = error instanceof ApiError ? error.message : 'Unable to load VOD titles'
   } finally {
