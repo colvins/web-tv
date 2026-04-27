@@ -354,7 +354,6 @@ watch(
   <VodDesktopLayout
     v-if="isDesktopLayout"
     :current-source-name="headerSourceName"
-    :current-site-name="headerSiteName"
     :page-label="pageLabel"
     :load-error="loadError"
     :loading="loading"
@@ -378,7 +377,6 @@ watch(
   <VodMobileLayout
     v-else
     :current-source-name="headerSourceName"
-    :current-site-name="headerSiteName"
     :page-label="pageLabel"
     :load-error="loadError"
     :loading="loading"

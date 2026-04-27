@@ -7,7 +7,6 @@ import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
 
 defineProps<{
   currentSourceName: string
-  currentSiteName: string
   pageLabel: string
   loadError: string | null
   loading: boolean
@@ -53,10 +52,7 @@ const emit = defineEmits<{
       <article class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
         <div class="grid gap-2">
           <p class="text-sm uppercase tracking-[0.28em] text-white/38">Current source</p>
-          <div class="flex flex-col gap-1">
-            <h2 class="text-2xl font-semibold text-white sm:text-3xl">{{ currentSourceName }}</h2>
-            <p class="text-sm text-white/52">{{ currentSiteName }}</p>
-          </div>
+          <h2 class="text-2xl font-semibold text-white sm:text-3xl">{{ currentSourceName }}</h2>
         </div>
         <VodCategoryChips
           :categories="categories"

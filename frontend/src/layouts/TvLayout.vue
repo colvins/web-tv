@@ -77,14 +77,18 @@ function isNavItemActive(path: string) {
     </aside>
 
     <main class="px-5 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8 lg:ml-32 lg:px-10 lg:pt-6 xl:ml-72">
-      <header class="mb-6 flex flex-col gap-4 sm:mb-8" :class="isVodCatalogRoute ? 'xl:flex-row xl:items-end xl:justify-between' : 'sm:flex-row sm:items-center sm:justify-between'">
-        <div class="min-w-0">
+      <header class="mb-6 flex flex-col gap-4 sm:mb-8" :class="isVodCatalogRoute ? 'min-h-[3rem] justify-start sm:min-h-[3.5rem] xl:flex-row xl:items-end xl:justify-end' : 'sm:flex-row sm:items-center sm:justify-between'">
+        <div v-if="!isVodCatalogRoute" class="min-w-0">
           <p class="text-sm uppercase tracking-[0.32em] text-white/42">web-tv</p>
           <h1 class="mt-2 truncate text-3xl font-semibold tracking-normal text-white sm:text-6xl">
             {{ pageTitle }}
           </h1>
         </div>
-        <div v-if="isVodCatalogRoute" id="vod-page-toolbar" class="w-full xl:max-w-[60rem]"></div>
+        <div
+          v-if="isVodCatalogRoute"
+          id="vod-page-toolbar"
+          class="fixed right-5 top-[calc(env(safe-area-inset-top)+1rem)] z-20 flex justify-end sm:right-8 sm:top-8 lg:right-10 lg:top-6 lg:static lg:w-full xl:max-w-[60rem]"
+        ></div>
         <RouterLink
           v-else
           to="/search"

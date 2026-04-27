@@ -20,26 +20,26 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex gap-3" :class="compact ? 'flex-col' : 'justify-end'">
-    <div class="flex min-w-0 gap-3" :class="compact ? 'flex-col' : 'items-center'">
+  <div class="flex gap-3" :class="compact ? 'items-center justify-end' : 'justify-end'">
+    <div class="flex min-w-0 gap-3" :class="compact ? 'items-center' : 'items-center'">
       <NInput
         :value="searchQuery"
         round
         class="min-w-0"
-        :class="compact ? 'w-full' : 'w-[11rem] xl:w-[12rem]'"
+        :class="compact ? 'vod-search-input-compact w-[8.5rem]' : 'w-[11rem] xl:w-[12rem]'"
         placeholder="Search titles"
         clearable
         @update:value="(value) => emit('update:searchQuery', value)"
         @keyup.enter="emit('search')"
       />
-      <NButton round type="primary" :loading="searchLoading" @click="emit('search')">
+      <NButton :round="true" type="primary" :size="compact ? 'small' : 'medium'" :loading="searchLoading" @click="emit('search')">
         <template #icon><Search class="h-4 w-4" /></template>
         Search
       </NButton>
     </div>
 
-    <div class="flex items-center gap-2" :class="compact ? 'justify-end' : 'justify-end'">
-      <NButton quaternary circle :loading="loading || sourceLoading" @click="emit('refresh')">
+    <div class="flex items-center gap-2 justify-end">
+      <NButton quaternary circle :size="compact ? 'small' : 'medium'" :loading="loading || sourceLoading" @click="emit('refresh')">
         <template #icon><RefreshCw class="h-4 w-4" /></template>
       </NButton>
     </div>
@@ -53,5 +53,13 @@ const emit = defineEmits<{
 
 :deep(.n-input__input-el) {
   font-size: 0.95rem;
+}
+
+.vod-search-input-compact:deep(.n-input) {
+  --n-height: 34px;
+}
+
+.vod-search-input-compact:deep(.n-input__input-el) {
+  font-size: 0.82rem;
 }
 </style>
