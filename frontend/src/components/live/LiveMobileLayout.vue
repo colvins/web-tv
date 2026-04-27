@@ -43,7 +43,9 @@ const queryModel = computed({
       </p>
     </div>
 
-    <LivePlayer :playback="playback" />
+    <div class="live-mobile-sticky-player relative sticky top-2 z-30 -mx-2 px-2 pt-1 pb-2">
+      <LivePlayer :playback="playback" />
+    </div>
 
     <div class="grid gap-4">
       <div class="glass-panel rounded-[1.5rem] p-3 sm:rounded-[2rem] sm:p-4">
@@ -126,9 +128,38 @@ const queryModel = computed({
   display: none;
 }
 
+.live-mobile-sticky-player {
+  isolation: isolate;
+}
+
 .live-mobile-channel-content {
   --live-mobile-flow-gap: 1.25rem;
   margin-top: var(--live-mobile-flow-gap);
   scroll-margin-top: var(--live-mobile-flow-gap);
+}
+
+.live-mobile-sticky-player::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 2rem;
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.9), rgb(5 5 7 / 0.58) 76%, rgb(5 5 7 / 0));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  pointer-events: none;
+}
+
+.live-mobile-sticky-player::after {
+  content: '';
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  bottom: -0.5rem;
+  height: 1rem;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.24), rgb(5 5 7 / 0));
+  filter: blur(6px);
+  pointer-events: none;
 }
 </style>
