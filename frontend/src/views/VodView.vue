@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { RefreshCw, Settings } from 'lucide-vue-next'
-import { NButton } from 'naive-ui'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   getVodCategories,
@@ -15,9 +13,8 @@ import {
   type VodBrowsePageResponse,
 } from '@/api/sourceConfigs'
 import { ApiError } from '@/api/client'
-import VodCatalogGrid from '@/components/vod/VodCatalogGrid.vue'
-import VodCategoryChips from '@/components/vod/VodCategoryChips.vue'
-import VodSourceSelector from '@/components/vod/VodSourceSelector.vue'
+import VodDesktopLayout from '@/components/vod/VodDesktopLayout.vue'
+import VodMobileLayout from '@/components/vod/VodMobileLayout.vue'
 import {
   buildVodCatalogQuery,
   getVodCatalogRouteKey,
@@ -43,6 +40,9 @@ const searchQuery = ref('')
 const submittedQuery = ref('')
 const bootstrapped = ref(false)
 const lastLoadedRouteKey = ref<string | null>(null)
+const isDesktopLayout = ref(true)
+
+let mediaQuery: MediaQueryList | undefined
 
 const sourceOptions = computed(() =>
   sources.value
@@ -64,6 +64,10 @@ const isSearchMode = computed(() => submittedQuery.value.trim().length > 0)
 const canGoPrev = computed(() => (pageResponse.value?.page ?? 1) > 1)
 const canGoNext = computed(() => (pageResponse.value?.page ?? 1) < (pageResponse.value?.pagecount ?? 1))
 const enabledSources = computed(() => sources.value.filter((source) => source.enabled && source.vod_site_count > 0))
+
+function syncLayoutMode() {
+  isDesktopLayout.value = mediaQuery?.matches ?? window.innerWidth >= 768
+}
 
 function normalizeRouteStateCategory(
   routeState: VodCatalogRouteState,
@@ -334,133 +338,90 @@ watch(
 )
 
 onMounted(bootstrap)
+onMounted(() => {
+  mediaQuery = window.matchMedia('(min-width: 768px)')
+  syncLayoutMode()
+  mediaQuery.addEventListener('change', syncLayoutMode)
+})
+
+onBeforeUnmount(() => {
+  mediaQuery?.removeEventListener('change', syncLayoutMode)
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    syncLayoutMode()
+  },
+)
 </script>
 
 <template>
-  <section class="grid gap-6">
-    <div
-      class="glass-panel overflow-hidden rounded-[2.5rem] bg-[radial-gradient(circle_at_top_left,rgba(90,161,255,0.2),transparent_40%),linear-gradient(135deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-7 sm:p-10"
-    >
-      <div class="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
-        <div class="max-w-4xl">
-          <p class="text-sm uppercase tracking-[0.28em] text-white/44">VOD Browser</p>
-          <h2 class="mt-4 text-4xl font-semibold text-white sm:text-6xl">{{ headerSiteName }}</h2>
-          <p class="mt-5 max-w-3xl text-base leading-7 text-white/60">Browse titles, jump into details, and start an episode quickly.</p>
-        </div>
-        <div class="flex flex-wrap gap-3">
-          <RouterLink
-            to="/settings/sources"
-            class="tv-focus-card glass-panel inline-flex min-h-12 items-center rounded-3xl px-5 text-sm font-medium"
-          >
-            <Settings class="mr-2 h-4 w-4" aria-hidden="true" />
-            Source Settings
-          </RouterLink>
-          <NButton round secondary :loading="loading" @click="bootstrap">
-            <template #icon><RefreshCw class="h-4 w-4" /></template>
-            Refresh
-          </NButton>
-        </div>
-      </div>
+  <VodDesktopLayout
+    v-if="isDesktopLayout"
+    :header-site-name="headerSiteName"
+    :header-source-name="headerSourceName"
+    :page-label="pageLabel"
+    :selected-site-key="pageResponse?.site.site_key ?? categoriesResponse?.site.site_key ?? null"
+    :total-results="pageResponse?.total ?? 0"
+    :load-error="loadError"
+    :loading="loading"
+    :no-usable-source="noUsableSource"
+    :selected-source-id="selectedSourceId"
+    :selected-category-id="selectedCategoryId"
+    :source-options="sourceOptions"
+    :search-query="searchQuery"
+    :source-loading="sourceLoading"
+    :search-loading="searchLoading"
+    :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
+    :categories="categoriesResponse?.categories ?? []"
+    :items="pageResponse?.items ?? []"
+    :can-go-prev="canGoPrev"
+    :can-go-next="canGoNext"
+    :is-search-mode="isSearchMode"
+    :submitted-query="submittedQuery"
+    :pagecount="pageResponse?.pagecount ?? 0"
+    @refresh="bootstrap"
+    @update:selected-source-id="onSourceChange"
+    @update:search-query="(value) => (searchQuery = value)"
+    @search="runSearch(1)"
+    @reset="selectCategory(null)"
+    @select-category="selectCategory"
+    @select-item="openDetail"
+    @change-page="changePage"
+  />
 
-      <div class="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-          <p class="text-sm text-white/42">Source package</p>
-          <p class="mt-2 text-lg font-semibold text-white">{{ headerSourceName }}</p>
-        </div>
-        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-          <p class="text-sm text-white/42">Current site</p>
-          <p class="mt-2 text-lg font-semibold text-white">{{ pageResponse?.site.site_key ?? categoriesResponse?.site.site_key ?? 'Not selected' }}</p>
-        </div>
-        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-          <p class="text-sm text-white/42">Results</p>
-          <p class="mt-2 text-lg font-semibold text-white">{{ pageResponse?.total ?? 0 }}</p>
-        </div>
-        <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-          <p class="text-sm text-white/42">Page</p>
-          <p class="mt-2 text-lg font-semibold text-white">{{ pageLabel }}</p>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="loadError" class="glass-panel rounded-[2rem] border border-red-300/18 bg-red-400/10 p-5 text-red-100">
-      {{ loadError }}
-    </div>
-
-    <div
-      v-if="!loading && noUsableSource"
-      class="glass-panel flex min-h-[24rem] items-end rounded-[2.5rem] p-7 sm:p-10"
-    >
-      <div class="max-w-3xl">
-        <p class="text-sm uppercase tracking-[0.28em] text-white/42">No VOD source</p>
-        <h2 class="mt-3 text-4xl font-semibold text-white sm:text-6xl">No VOD source is ready yet</h2>
-        <p class="mt-5 text-base leading-7 text-white/58">Add or enable a source with catalog data in Source Settings.</p>
-      </div>
-    </div>
-
-    <template v-else>
-      <VodSourceSelector
-        :source-options="sourceOptions"
-        :selected-source-id="selectedSourceId"
-        :search-query="searchQuery"
-        :loading="loading"
-        :source-loading="sourceLoading"
-        :search-loading="searchLoading"
-        :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
-        @update:selected-source-id="onSourceChange"
-        @update:search-query="(value) => (searchQuery = value)"
-        @search="runSearch(1)"
-        @reset="selectCategory(null)"
-      />
-
-      <article class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
-        <VodCategoryChips
-          :categories="categoriesResponse?.categories ?? []"
-          :selected-category-id="selectedCategoryId"
-          @select="selectCategory"
-        />
-      </article>
-
-      <VodCatalogGrid
-        :items="pageResponse?.items ?? []"
-        :loading="sourceLoading || searchLoading"
-        @select-item="openDetail"
-      />
-    </template>
-
-    <div
-      v-if="!loading && !noUsableSource && !selectedSourceId"
-      class="glass-panel flex min-h-[18rem] items-end rounded-[2.5rem] p-7 sm:p-10"
-    >
-      <div class="max-w-3xl">
-        <p class="text-sm uppercase tracking-[0.28em] text-white/42">No source selected</p>
-        <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">Choose a VOD source to begin browsing</h2>
-        <p class="mt-5 text-base leading-7 text-white/58">Pick a source from the selector to open its catalog.</p>
-      </div>
-    </div>
-
-    <div
-      v-if="!loading && !sourceLoading && !searchLoading && !noUsableSource && selectedSourceId && !pageResponse?.items.length"
-      class="glass-panel flex min-h-[18rem] items-end rounded-[2.5rem] p-7 sm:p-10"
-    >
-      <div class="max-w-3xl">
-        <p class="text-sm uppercase tracking-[0.28em] text-white/42">No titles</p>
-        <h2 class="mt-3 text-3xl font-semibold text-white sm:text-5xl">
-          {{ isSearchMode ? 'No results matched the current search' : 'No titles were returned for this view' }}
-        </h2>
-      </div>
-    </div>
-
-    <article v-if="pageResponse && pageResponse.pagecount > 0" class="glass-panel rounded-[2rem] p-5">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-sm text-white/52">
-          {{ isSearchMode ? `Search: ${submittedQuery}` : `Category: ${selectedCategoryId ?? 'All'}` }}
-        </p>
-        <div class="flex items-center gap-3">
-          <NButton round secondary :disabled="!canGoPrev" @click="changePage(-1)">Previous</NButton>
-          <span class="min-w-24 text-center text-sm text-white/64">{{ pageLabel }}</span>
-          <NButton round secondary :disabled="!canGoNext" @click="changePage(1)">Next</NButton>
-        </div>
-      </div>
-    </article>
-  </section>
+  <VodMobileLayout
+    v-else
+    :header-site-name="headerSiteName"
+    :header-source-name="headerSourceName"
+    :page-label="pageLabel"
+    :selected-site-key="pageResponse?.site.site_key ?? categoriesResponse?.site.site_key ?? null"
+    :total-results="pageResponse?.total ?? 0"
+    :load-error="loadError"
+    :loading="loading"
+    :no-usable-source="noUsableSource"
+    :selected-source-id="selectedSourceId"
+    :selected-category-id="selectedCategoryId"
+    :source-options="sourceOptions"
+    :search-query="searchQuery"
+    :source-loading="sourceLoading"
+    :search-loading="searchLoading"
+    :has-search-filter="Boolean(submittedQuery || selectedCategoryId)"
+    :categories="categoriesResponse?.categories ?? []"
+    :items="pageResponse?.items ?? []"
+    :can-go-prev="canGoPrev"
+    :can-go-next="canGoNext"
+    :is-search-mode="isSearchMode"
+    :submitted-query="submittedQuery"
+    :pagecount="pageResponse?.pagecount ?? 0"
+    @refresh="bootstrap"
+    @update:selected-source-id="onSourceChange"
+    @update:search-query="(value) => (searchQuery = value)"
+    @search="runSearch(1)"
+    @reset="selectCategory(null)"
+    @select-category="selectCategory"
+    @select-item="openDetail"
+    @change-page="changePage"
+  />
 </template>

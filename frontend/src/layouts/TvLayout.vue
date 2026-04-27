@@ -41,7 +41,7 @@ function isNavItemActive(path: string) {
 </script>
 
 <template>
-  <div class="min-h-screen pb-24 text-white lg:pb-0">
+  <div class="min-h-screen pb-[calc(6.5rem+env(safe-area-inset-bottom))] text-white lg:pb-0">
     <aside
       class="glass-panel fixed left-5 top-5 z-30 hidden h-[calc(100vh-2.5rem)] w-24 flex-col items-center rounded-[2rem] px-3 py-5 lg:flex xl:w-64 xl:items-stretch"
       aria-label="Primary navigation"
@@ -69,11 +69,11 @@ function isNavItemActive(path: string) {
       </nav>
     </aside>
 
-    <main class="px-5 pt-6 sm:px-8 lg:ml-32 lg:px-10 xl:ml-72">
-      <header class="mb-8 flex items-center justify-between gap-4">
+    <main class="px-5 pt-[calc(env(safe-area-inset-top)+1rem)] sm:px-8 sm:pt-8 lg:ml-32 lg:px-10 lg:pt-6 xl:ml-72">
+      <header class="mb-6 flex items-center justify-between gap-4 sm:mb-8">
         <div>
           <p class="text-sm uppercase tracking-[0.32em] text-white/42">web-tv</p>
-          <h1 class="mt-2 text-4xl font-semibold tracking-normal text-white sm:text-6xl">
+          <h1 class="mt-2 text-3xl font-semibold tracking-normal text-white sm:text-6xl">
             {{ pageTitle }}
           </h1>
         </div>
@@ -89,7 +89,7 @@ function isNavItemActive(path: string) {
     </main>
 
     <nav
-      class="glass-panel fixed inset-x-3 bottom-3 z-40 grid grid-cols-7 rounded-[2rem] p-2 lg:hidden"
+      class="glass-panel fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-40 grid grid-cols-7 rounded-[2rem] p-2 lg:hidden"
       aria-label="Mobile navigation"
     >
       <RouterLink

@@ -6,6 +6,7 @@ import type { VodBrowseCategory } from '@/api/sourceConfigs'
 const props = defineProps<{
   categories: VodBrowseCategory[]
   selectedCategoryId: string | null
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -140,12 +141,12 @@ function selectRootLeaf(categoryId: string | null) {
 </script>
 
 <template>
-  <div class="mt-6 grid gap-5">
+  <div class="grid" :class="compact ? 'gap-4' : 'mt-6 gap-5'">
     <div class="flex flex-wrap gap-3">
       <button
         type="button"
-        class="rounded-full border px-4 py-2 text-sm transition"
-        :class="childButtonClass(null)"
+        class="rounded-full border transition"
+        :class="[compact ? 'px-3.5 py-2 text-xs' : 'px-4 py-2 text-sm', childButtonClass(null)]"
         @click="selectAll()"
       >
         All
@@ -155,13 +156,16 @@ function selectRootLeaf(categoryId: string | null) {
     <template v-if="hasParentStructure">
       <div class="grid gap-3">
         <p class="text-xs uppercase tracking-[0.18em] text-white/40">Browse</p>
-        <div class="flex flex-wrap gap-3">
+        <div class="flex flex-wrap" :class="compact ? 'gap-2' : 'gap-3'">
           <button
             v-for="category in displayedRootCategories"
             :key="`${category.id}-${category.type_name}`"
             type="button"
-            class="rounded-full border px-4 py-2 text-sm transition"
-            :class="hasChildren(category.id) ? parentButtonClass(category.id) : childButtonClass(category.id)"
+            class="rounded-full border transition"
+            :class="[
+              compact ? 'px-3.5 py-2 text-xs' : 'px-4 py-2 text-sm',
+              hasChildren(category.id) ? parentButtonClass(category.id) : childButtonClass(category.id),
+            ]"
             @click="hasChildren(category.id) ? selectParent(category.id) : selectRootLeaf(category.id)"
           >
             {{ category.type_name ?? `Type ${category.type_id}` }}
@@ -171,13 +175,13 @@ function selectRootLeaf(categoryId: string | null) {
 
       <div v-if="childCategories.length" class="grid gap-3">
         <p class="text-xs uppercase tracking-[0.18em] text-white/40">Categories</p>
-        <div class="flex flex-wrap gap-3">
+        <div class="flex flex-wrap" :class="compact ? 'gap-2' : 'gap-3'">
           <button
             v-for="category in childCategories"
             :key="`${category.id}-${category.type_name}`"
             type="button"
-            class="rounded-full border px-4 py-2 text-sm transition"
-            :class="childButtonClass(category.id)"
+            class="rounded-full border transition"
+            :class="[compact ? 'px-3.5 py-2 text-xs' : 'px-4 py-2 text-sm', childButtonClass(category.id)]"
             @click="emit('select', category.id)"
           >
             {{ category.type_name ?? `Type ${category.type_id}` }}
@@ -188,13 +192,13 @@ function selectRootLeaf(categoryId: string | null) {
 
     <div v-else class="grid gap-3">
       <p class="text-xs uppercase tracking-[0.18em] text-white/40">Browse</p>
-      <div class="flex flex-wrap gap-3">
+      <div class="flex flex-wrap" :class="compact ? 'gap-2' : 'gap-3'">
         <button
           v-for="category in normalizedCategories"
           :key="`${category.id}-${category.type_name}`"
           type="button"
-          class="rounded-full border px-4 py-2 text-sm transition"
-          :class="childButtonClass(category.id)"
+          class="rounded-full border transition"
+          :class="[compact ? 'px-3.5 py-2 text-xs' : 'px-4 py-2 text-sm', childButtonClass(category.id)]"
           @click="emit('select', category.id)"
         >
           {{ category.type_name ?? `Type ${category.type_id}` }}

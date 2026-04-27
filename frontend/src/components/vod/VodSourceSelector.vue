@@ -2,7 +2,7 @@
 import { Search } from 'lucide-vue-next'
 import { NButton, NInput, NSelect } from 'naive-ui'
 
-defineProps<{
+withDefaults(defineProps<{
   sourceOptions: Array<{ label: string; value: string }>
   selectedSourceId: string | null
   searchQuery: string
@@ -10,7 +10,10 @@ defineProps<{
   sourceLoading: boolean
   searchLoading: boolean
   hasSearchFilter: boolean
-}>()
+  compact?: boolean
+}>(), {
+  compact: false,
+})
 
 const emit = defineEmits<{
   'update:selectedSourceId': [value: string | null]
@@ -21,9 +24,9 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <article class="glass-panel rounded-[2.25rem] p-6 sm:p-8">
-    <div class="grid gap-4 xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-      <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
+  <article class="glass-panel" :class="compact ? 'rounded-[1.5rem] p-4' : 'rounded-[2.25rem] p-6 sm:p-8'">
+    <div class="grid gap-4" :class="compact ? '' : 'xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]'">
+      <div class="rounded-[1.5rem] border border-white/10 bg-black/18" :class="compact ? 'p-4' : 'p-5'">
         <p class="text-sm uppercase tracking-[0.18em] text-white/42">Source</p>
         <NSelect
           class="mt-4"
@@ -35,8 +38,8 @@ const emit = defineEmits<{
         />
       </div>
 
-      <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-5">
-        <div class="flex flex-col gap-4 lg:flex-row">
+      <div class="rounded-[1.5rem] border border-white/10 bg-black/18" :class="compact ? 'p-4' : 'p-5'">
+        <div class="flex flex-col gap-4" :class="compact ? '' : 'lg:flex-row'">
           <NInput
             :value="searchQuery"
             placeholder="Search titles"
@@ -54,7 +57,7 @@ const emit = defineEmits<{
             </NButton>
           </div>
         </div>
-        <p class="mt-4 text-sm text-white/48">Choose a source, browse categories, or search by title.</p>
+        <p v-if="!compact" class="mt-4 text-sm text-white/48">Choose a source, browse categories, or search by title.</p>
       </div>
     </div>
   </article>

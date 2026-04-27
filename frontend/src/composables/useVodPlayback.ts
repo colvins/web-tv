@@ -27,13 +27,13 @@ export function useVodPlayback() {
   const isPlaying = ref(false)
   const isMuted = ref(false)
   const isFullscreen = ref(false)
-  const playerStatusText = ref('Choose an episode to start playback.')
+  const playerStatusText = ref('请选择剧集开始播放。')
   const videoEl = ref<HTMLVideoElement | null>(null)
 
   let hls: Hls | null = null
 
-  const streamHost = computed(() => currentEpisode.value?.stream_host ?? 'unknown-host')
-  const streamTypeGuess = computed(() => currentEpisode.value?.stream_type_guess ?? 'unknown')
+  const streamHost = computed(() => currentEpisode.value?.stream_host ?? '未知来源')
+  const streamTypeGuess = computed(() => currentEpisode.value?.stream_type_guess ?? '未知格式')
   const nativeHlsSupported = computed(() => !!videoEl.value?.canPlayType('application/vnd.apple.mpegurl'))
   const hlsJsSupported = computed(() => Hls.isSupported())
 
@@ -62,7 +62,7 @@ export function useVodPlayback() {
     currentEpisode.value = null
     playbackState.value = 'idle'
     errorMessage.value = ''
-    playerStatusText.value = 'Choose an episode to start playback.'
+    playerStatusText.value = '请选择剧集开始播放。'
     isPlaying.value = false
   }
 
@@ -73,10 +73,10 @@ export function useVodPlayback() {
       await video.play()
     } catch (error) {
       playbackState.value = 'ready'
-      playerStatusText.value = 'Ready to play.'
+      playerStatusText.value = '可以开始播放。'
       isPlaying.value = false
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        errorMessage.value = 'Autoplay was blocked. Press play to start this episode.'
+        errorMessage.value = '自动播放被阻止，请点击播放继续。'
       }
     }
   }
@@ -89,7 +89,7 @@ export function useVodPlayback() {
     currentEpisode.value = episode
     playbackState.value = 'loading'
     errorMessage.value = ''
-    playerStatusText.value = 'Loading episode...'
+    playerStatusText.value = '正在加载播放...'
     video.muted = isMuted.value
 
     if (episode.is_hls_like) {
@@ -116,8 +116,8 @@ export function useVodPlayback() {
               hls = null
             }
             playbackState.value = 'error'
-            playerStatusText.value = 'Episode playback failed.'
-            errorMessage.value = 'Unable to load this HLS episode.'
+            playerStatusText.value = '播放失败。'
+            errorMessage.value = '无法加载当前 HLS 播放地址。'
             isPlaying.value = false
           }
         })
@@ -126,8 +126,8 @@ export function useVodPlayback() {
       }
 
       playbackState.value = 'error'
-      playerStatusText.value = 'Episode playback failed.'
-      errorMessage.value = 'This browser does not support HLS playback.'
+      playerStatusText.value = '播放失败。'
+      errorMessage.value = '当前浏览器不支持 HLS 播放。'
       return
     }
 
@@ -184,7 +184,7 @@ export function useVodPlayback() {
 
   function handlePlaying() {
     playbackState.value = 'ready'
-    playerStatusText.value = 'Now playing.'
+    playerStatusText.value = '正在播放。'
     isPlaying.value = true
     errorMessage.value = ''
   }
@@ -192,21 +192,21 @@ export function useVodPlayback() {
   function handlePause() {
     isPlaying.value = false
     if (playbackState.value !== 'error') {
-      playerStatusText.value = 'Playback paused.'
+      playerStatusText.value = '已暂停。'
     }
   }
 
   function handleWaiting() {
     if (!currentEpisode.value) return
     playbackState.value = 'loading'
-    playerStatusText.value = 'Buffering episode...'
+    playerStatusText.value = '正在缓冲...'
   }
 
   function handleCanPlay() {
     if (playbackState.value === 'error') return
     playbackState.value = 'ready'
     if (!isPlaying.value) {
-      playerStatusText.value = 'Ready to play.'
+      playerStatusText.value = '可以开始播放。'
     }
   }
 
@@ -219,8 +219,8 @@ export function useVodPlayback() {
       streamTypeGuess: currentEpisode.value?.stream_type_guess ?? null,
     })
     playbackState.value = 'error'
-    playerStatusText.value = 'Episode playback failed.'
-    errorMessage.value = 'Browser media playback error.'
+    playerStatusText.value = '播放失败。'
+    errorMessage.value = '浏览器媒体播放出错。'
     isPlaying.value = false
   }
 
