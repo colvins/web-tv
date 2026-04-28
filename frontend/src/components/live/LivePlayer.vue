@@ -80,7 +80,7 @@ async function copyDiagnostics() {
 
 <template>
   <div
-    class="player-shell glass-panel mx-auto w-full border border-white/12 bg-black/72 shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl transition-all duration-300"
+    class="player-shell mx-auto w-full border border-white/12 bg-black/92 transition-all duration-300"
     :class="
       playback.isFullscreen.value
         ? 'overflow-visible rounded-none border-transparent shadow-none'
@@ -191,7 +191,7 @@ async function copyDiagnostics() {
 
           <div
             v-if="playback.playbackState.value === 'error'"
-            class="flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-rose-400/22 bg-rose-500/10 px-3 py-2 text-xs text-rose-100/92 shadow-[0_12px_32px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+            class="flex w-fit max-w-full flex-wrap items-center gap-2 rounded-full border border-rose-400/22 bg-rose-500/10 px-3 py-2 text-xs text-rose-100/92 shadow-[0_12px_32px_rgba(0,0,0,0.24)]"
           >
             <span class="rounded-full border border-rose-300/24 bg-rose-400/12 px-2 py-0.5 uppercase tracking-[0.2em] text-[10px]">
               {{ errorBadgeText }}
@@ -218,7 +218,7 @@ async function copyDiagnostics() {
 
           <div
             v-if="playback.channelDiagnosis.value"
-            class="max-w-md rounded-[1.25rem] border border-white/10 bg-black/42 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+            class="max-w-md rounded-[1.25rem] border border-white/10 bg-black/78 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)]"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -269,7 +269,7 @@ async function copyDiagnostics() {
 
           <details
             v-if="playback.playbackState.value === 'error'"
-            class="diagnostics-panel max-w-md rounded-[1.25rem] border border-white/10 bg-black/42 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)] backdrop-blur-xl"
+            class="diagnostics-panel max-w-md rounded-[1.25rem] border border-white/10 bg-black/78 p-3 text-xs text-white/78 shadow-[0_12px_36px_rgba(0,0,0,0.24)]"
           >
             <summary class="flex cursor-pointer list-none items-center justify-between gap-3">
               <div class="min-w-0">
@@ -367,7 +367,7 @@ async function copyDiagnostics() {
             </button>
             <div
               v-if="playback.playbackState.value !== 'idle'"
-              class="hidden min-h-12 items-center rounded-full border border-white/14 bg-black/46 px-4 text-sm text-white/72 shadow-[0_12px_32px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:flex"
+              class="hidden min-h-12 items-center rounded-full border border-white/14 bg-black/72 px-4 text-sm text-white/72 shadow-[0_12px_32px_rgba(0,0,0,0.32)] sm:flex"
             >
               <LoaderCircle
                 v-if="playback.playbackState.value === 'loading'"
@@ -401,8 +401,6 @@ async function copyDiagnostics() {
   box-shadow:
     0 12px 32px rgb(0 0 0 / 0.45),
     inset 0 1px 0 rgb(255 255 255 / 0.12);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
 }
 
 .player-control-button:hover,
