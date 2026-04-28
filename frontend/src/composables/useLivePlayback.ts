@@ -81,6 +81,16 @@ export function useLivePlayback() {
     playbackState.value === 'error' ||
     !selectedChannel.value,
   )
+  const prefersNativePlayerUi = computed(() => {
+    const streamUrl = selectedChannel.value?.stream_url ?? ''
+    if (!streamUrl) return false
+    const normalizedUrl = streamUrl.toLowerCase()
+    return (
+      normalizedUrl.includes('profile=matroska') ||
+      normalizedUrl.includes('.mkv') ||
+      (streamTypeGuess.value === 'unknown_stream' && !isHlsStream(streamUrl) && !isDirectTsStream(streamUrl))
+    )
+  })
   const streamHost = computed(() => getStreamHost(selectedChannel.value?.stream_url))
   const streamTypeGuess = computed<StreamTypeGuess>(() => guessStreamType(selectedChannel.value?.stream_url ?? ''))
   const nativeHlsSupported = computed(() => {
@@ -128,6 +138,12 @@ export function useLivePlayback() {
   }
 
   function syncControlsVisibility() {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready' && isPlaying.value) {
+      controlsVisible.value = false
+      clearControlsHideTimer()
+      return
+    }
+
     const keepVisibleForHover = playerHovering.value && !isFullscreen.value
     const keepVisibleForFocus = playerFocused.value && !isFullscreen.value
     if (shouldPinControlsVisible.value || keepVisibleForHover || keepVisibleForFocus || !isPlaying.value) {
@@ -147,6 +163,11 @@ export function useLivePlayback() {
   }
 
   function revealControls() {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready' && isPlaying.value) {
+      controlsVisible.value = false
+      clearControlsHideTimer()
+      return
+    }
     controlsVisible.value = true
     syncControlsVisibility()
   }
@@ -815,25 +836,30 @@ export function useLivePlayback() {
   }
 
   function handlePlayerPointerEnter() {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready') return
     playerHovering.value = true
     revealControls()
   }
 
   function handlePlayerPointerLeave() {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready') return
     playerHovering.value = false
     syncControlsVisibility()
   }
 
   function handlePlayerInteraction() {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready') return
     revealControls()
   }
 
   function handlePlayerFocusIn() {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready') return
     playerFocused.value = true
     revealControls()
   }
 
   function handlePlayerFocusOut(event: FocusEvent) {
+    if (prefersNativePlayerUi.value && playbackState.value === 'ready') return
     const currentTarget = event.currentTarget as HTMLElement | null
     const relatedTarget = event.relatedTarget as Node | null
     if (currentTarget?.contains(relatedTarget)) return
@@ -877,6 +903,7 @@ export function useLivePlayback() {
     channelDiagnosisError,
     controlsVisible,
     isBuffering,
+    prefersNativePlayerUi,
     setVideoElement,
     updateSelectedChannel,
     loadChannel,

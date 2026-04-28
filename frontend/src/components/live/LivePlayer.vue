@@ -64,6 +64,16 @@ const diagnosticsLines = computed(() => {
   return lines.join('\n')
 })
 
+const showCustomChrome = computed(
+  () =>
+    !props.playback.prefersNativePlayerUi.value ||
+    props.playback.playbackState.value === 'idle' ||
+    props.playback.playbackState.value === 'loading' ||
+    props.playback.playbackState.value === 'error' ||
+    props.playback.isBuffering.value ||
+    !props.playback.isPlaying.value,
+)
+
 async function copyDiagnostics() {
   try {
     await navigator.clipboard.writeText(diagnosticsLines.value)
@@ -116,6 +126,7 @@ async function copyDiagnostics() {
         class="player-video h-full w-full bg-black object-contain"
         :class="playback.isFullscreen.value ? 'rounded-none' : ''"
         playsinline
+        :controls="playback.prefersNativePlayerUi.value"
         controlslist="nodownload noplaybackrate"
         preload="auto"
         @canplay="playback.handleCanPlay"
@@ -127,11 +138,13 @@ async function copyDiagnostics() {
       ></video>
 
       <div
+        v-if="showCustomChrome"
         class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/78 via-black/15 to-black/45 transition-opacity duration-300"
         :class="playback.controlsVisible.value ? 'opacity-100' : 'opacity-0'"
       ></div>
 
       <div
+        v-if="showCustomChrome"
         class="absolute inset-0 flex flex-col justify-between p-4 transition-opacity duration-300 sm:p-6"
         :class="playback.controlsVisible.value ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'"
       >
