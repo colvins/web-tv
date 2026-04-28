@@ -44,7 +44,6 @@ export type StreamTypeGuess = 'hls_m3u8' | 'direct_ts' | 'unknown_stream'
 export function useLivePlayback() {
   const selectedChannel = ref<LiveChannel | null>(null)
   const playbackState = ref<PlaybackState>('idle')
-  const isBuffering = ref(false)
   const playbackError = ref('')
   const playbackErrorCategory = ref<PlaybackErrorCategory | null>(null)
   const playbackErrorTechnical = ref('')
@@ -65,13 +64,11 @@ export function useLivePlayback() {
   let hls: Hls | null = null
   let mpegtsPlayer: mpegts.Player | null = null
   let controlsHideTimer: number | undefined
-  let bufferingTimer: number | undefined
   let hlsMediaRecoveryAttempted = false
   let diagnosedHlsRetryAttempted = false
   let mpegtsFallbackAttempted = false
   let usingMpegtsFallback = false
   let lastLoggedErrorSignature = ''
-  let playbackSessionId = 0
   const streamDiagnosisCache = new Map<string, LiveChannelDiagnosis | null>()
 
   const selectedChannelId = computed(() => selectedChannel.value?.id ?? null)
@@ -108,25 +105,6 @@ export function useLivePlayback() {
     controlsHideTimer = undefined
   }
 
-  function clearBufferingTimer() {
-    window.clearTimeout(bufferingTimer)
-    bufferingTimer = undefined
-  }
-
-  function resetTransientPlaybackState() {
-    clearBufferingTimer()
-    isBuffering.value = false
-  }
-
-  function beginPlaybackSession() {
-    playbackSessionId += 1
-    return playbackSessionId
-  }
-
-  function isActivePlaybackSession(sessionId: number) {
-    return sessionId === playbackSessionId
-  }
-
   function syncControlsVisibility() {
     const keepVisibleForHover = playerHovering.value && !isFullscreen.value
     const keepVisibleForFocus = playerFocused.value && !isFullscreen.value
@@ -152,9 +130,7 @@ export function useLivePlayback() {
   }
 
   function destroyPlayer() {
-    beginPlaybackSession()
     clearControlsHideTimer()
-    resetTransientPlaybackState()
     hls?.destroy()
     hls = null
     mpegtsPlayer?.unload()
@@ -232,7 +208,6 @@ export function useLivePlayback() {
   }
 
   function setPlaybackError(error: PlaybackErrorInfo) {
-    resetTransientPlaybackState()
     playbackState.value = 'error'
     playbackError.value = error.message
     playbackErrorCategory.value = error.category
@@ -385,74 +360,7 @@ export function useLivePlayback() {
     }
   }
 
-  function handleHlsError(data: {
-    type?: string
-    details?: string
-    fatal?: boolean
-    networkDetails?: unknown
-    response?: { code?: number; text?: string }
-  }) {
-    hlsError.value = {
-      type: data.type ?? 'unknown',
-      details: [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
-        .filter(Boolean)
-        .join(' | '),
-    }
-
-    if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
-      if (!isBuffering.value) {
-        isBuffering.value = true
-        playerStatusText.value = 'Buffering stream...'
-      }
-      return
-    }
-
-    if (data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR && data.fatal && !hlsMediaRecoveryAttempted) {
-      hlsMediaRecoveryAttempted = true
-      resetTransientPlaybackState()
-      playerStatusText.value = 'Recovering stream...'
-      playbackState.value = 'loading'
-      revealControls()
-      hls?.recoverMediaError()
-      return
-    }
-
-    if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
-      hlsMediaRecoveryAttempted = true
-      resetTransientPlaybackState()
-      playerStatusText.value = 'Recovering stream...'
-      playbackState.value = 'loading'
-      revealControls()
-      hls?.recoverMediaError()
-      return
-    }
-
-    if (data.fatal) {
-      setPlaybackError(classifyHlsError(data))
-    }
-  }
-
-  function attachHlsPlayback(video: HTMLVideoElement, streamUrl: string, sessionId: number) {
-    const nextHls = new Hls()
-    hls = nextHls
-    hlsMediaRecoveryAttempted = false
-
-    nextHls.on(Hls.Events.MEDIA_ATTACHED, () => {
-      if (!isActivePlaybackSession(sessionId) || hls !== nextHls) return
-      nextHls.loadSource(streamUrl)
-    })
-    nextHls.on(Hls.Events.MANIFEST_PARSED, () => {
-      if (!isActivePlaybackSession(sessionId) || hls !== nextHls) return
-      void attemptPlay(sessionId)
-    })
-    nextHls.on(Hls.Events.ERROR, (_event, data) => {
-      if (!isActivePlaybackSession(sessionId) || hls !== nextHls) return
-      handleHlsError(data)
-    })
-    nextHls.attachMedia(video)
-  }
-
-  async function attemptPlay(expectedSessionId?: number) {
+  async function attemptPlay() {
     const video = videoEl.value
     if (!video) return
 
@@ -460,15 +368,12 @@ export function useLivePlayback() {
 
     try {
       await video.play()
-      if (expectedSessionId !== undefined && !isActivePlaybackSession(expectedSessionId)) return
     } catch (error) {
-      if (expectedSessionId !== undefined && !isActivePlaybackSession(expectedSessionId)) return
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         setPlaybackError(buildPlaybackError('autoplay_blocked', error.name))
         return
       }
 
-      resetTransientPlaybackState()
       playbackState.value = 'ready'
       playerStatusText.value = 'Ready to play.'
       clearPlaybackError()
@@ -482,10 +387,8 @@ export function useLivePlayback() {
     if (!video) return
 
     destroyPlayer()
-    const sessionId = beginPlaybackSession()
     selectedChannel.value = { ...channel }
     playbackState.value = 'loading'
-    isBuffering.value = false
     clearPlaybackError()
     playerStatusText.value = 'Loading stream...'
     controlsVisible.value = true
@@ -496,12 +399,56 @@ export function useLivePlayback() {
     if (isHlsStream(streamUrl)) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = streamUrl
-        await attemptPlay(sessionId)
+        await attemptPlay()
         return
       }
 
       if (Hls.isSupported()) {
-        attachHlsPlayback(video, streamUrl, sessionId)
+        hls = new Hls()
+        hls.attachMedia(video)
+        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          hls?.loadSource(streamUrl)
+        })
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          void attemptPlay()
+        })
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          hlsError.value = {
+            type: data.type ?? 'unknown',
+            details: [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
+              .filter(Boolean)
+              .join(' | '),
+          }
+
+          if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
+            playbackState.value = 'loading'
+            playerStatusText.value = 'Buffering stream...'
+            revealControls()
+            return
+          }
+
+          if (data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR && data.fatal && !hlsMediaRecoveryAttempted) {
+            hlsMediaRecoveryAttempted = true
+            playerStatusText.value = 'Recovering stream...'
+            playbackState.value = 'loading'
+            revealControls()
+            hls?.recoverMediaError()
+            return
+          }
+
+          if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
+            hlsMediaRecoveryAttempted = true
+            playerStatusText.value = 'Recovering stream...'
+            playbackState.value = 'loading'
+            revealControls()
+            hls?.recoverMediaError()
+            return
+          }
+
+          if (data.fatal) {
+            setPlaybackError(classifyHlsError(data))
+          }
+        })
         return
       }
 
@@ -510,7 +457,7 @@ export function useLivePlayback() {
     }
 
     video.src = streamUrl
-    await attemptPlay(sessionId)
+    await attemptPlay()
   }
 
   async function startDiagnosedHlsPlayback(diagnosis: LiveChannelDiagnosis) {
@@ -521,13 +468,11 @@ export function useLivePlayback() {
     channelDiagnosis.value = diagnosis
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      const sessionId = beginPlaybackSession()
       playbackState.value = 'loading'
-      resetTransientPlaybackState()
       playerStatusText.value = 'Retrying stream as HLS...'
       revealControls()
       video.src = streamUrl
-      await attemptPlay(sessionId)
+      await attemptPlay()
       return true
     }
 
@@ -540,12 +485,55 @@ export function useLivePlayback() {
     mpegtsPlayer?.destroy()
     mpegtsPlayer = null
 
-    const sessionId = beginPlaybackSession()
     playbackState.value = 'loading'
-    resetTransientPlaybackState()
     playerStatusText.value = 'Retrying stream as HLS...'
     revealControls()
-    attachHlsPlayback(video, streamUrl, sessionId)
+
+    hls = new Hls()
+    hls.attachMedia(video)
+    hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+      hls?.loadSource(streamUrl)
+    })
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      void attemptPlay()
+    })
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      hlsError.value = {
+        type: data.type ?? 'unknown',
+        details: [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
+          .filter(Boolean)
+          .join(' | '),
+      }
+
+      if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
+        playbackState.value = 'loading'
+        playerStatusText.value = 'Buffering stream...'
+        revealControls()
+        return
+      }
+
+      if (data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR && data.fatal && !hlsMediaRecoveryAttempted) {
+        hlsMediaRecoveryAttempted = true
+        playerStatusText.value = 'Recovering stream...'
+        playbackState.value = 'loading'
+        revealControls()
+        hls?.recoverMediaError()
+        return
+      }
+
+      if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
+        hlsMediaRecoveryAttempted = true
+        playerStatusText.value = 'Recovering stream...'
+        playbackState.value = 'loading'
+        revealControls()
+        hls?.recoverMediaError()
+        return
+      }
+
+      if (data.fatal) {
+        setPlaybackError(classifyHlsError(data))
+      }
+    })
 
     return true
   }
@@ -565,9 +553,7 @@ export function useLivePlayback() {
     mpegtsPlayer = null
 
     usingMpegtsFallback = true
-    beginPlaybackSession()
     playbackState.value = 'loading'
-    resetTransientPlaybackState()
     playerStatusText.value = 'Retrying stream with TS fallback...'
     revealControls()
 
@@ -672,7 +658,6 @@ export function useLivePlayback() {
   }
 
   function handlePlaying() {
-    resetTransientPlaybackState()
     playbackState.value = 'ready'
     playerStatusText.value = 'Now playing.'
     isPlaying.value = true
@@ -680,7 +665,6 @@ export function useLivePlayback() {
   }
 
   function handlePause() {
-    resetTransientPlaybackState()
     isPlaying.value = false
     if (playbackState.value !== 'error') {
       playerStatusText.value = 'Playback paused.'
@@ -690,33 +674,17 @@ export function useLivePlayback() {
 
   function handleWaiting() {
     if (!selectedChannel.value) return
-    if (playbackState.value === 'error') return
-    clearBufferingTimer()
-
-    if (!isPlaying.value || playbackState.value === 'loading') {
-      playbackState.value = 'loading'
-      playerStatusText.value = 'Loading stream...'
-      revealControls()
-      return
-    }
-
-    bufferingTimer = window.setTimeout(() => {
-      if (!selectedChannel.value || playbackState.value === 'error' || !isPlaying.value) return
-      isBuffering.value = true
-      playerStatusText.value = 'Buffering stream...'
-      revealControls()
-    }, 350)
+    playbackState.value = 'loading'
+    playerStatusText.value = 'Buffering stream...'
+    revealControls()
   }
 
   function handleCanPlay() {
     if (playbackState.value === 'error') return
-    resetTransientPlaybackState()
     playbackState.value = 'ready'
     clearPlaybackError()
     if (!isPlaying.value) {
       playerStatusText.value = 'Ready to play.'
-    } else {
-      playerStatusText.value = 'Now playing.'
     }
     syncControlsVisibility()
   }
@@ -876,7 +844,6 @@ export function useLivePlayback() {
     channelDiagnosisLoading,
     channelDiagnosisError,
     controlsVisible,
-    isBuffering,
     setVideoElement,
     updateSelectedChannel,
     loadChannel,

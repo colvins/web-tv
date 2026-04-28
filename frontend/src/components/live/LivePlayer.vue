@@ -117,7 +117,7 @@ async function copyDiagnostics() {
         :class="playback.isFullscreen.value ? 'rounded-none' : ''"
         playsinline
         controlslist="nodownload noplaybackrate"
-        preload="auto"
+        preload="none"
         @canplay="playback.handleCanPlay"
         @error="playback.handleVideoError"
         @pause="playback.handlePause"
@@ -163,7 +163,7 @@ async function copyDiagnostics() {
             :class="
               playback.playbackState.value === 'error'
                 ? 'border-rose-400/40 bg-rose-500/15 text-rose-100'
-                : playback.playbackState.value === 'loading' || playback.isBuffering.value
+                : playback.playbackState.value === 'loading'
                   ? 'border-amber-300/35 bg-amber-400/10 text-amber-100'
                   : playback.playbackState.value === 'ready'
                     ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-100'
@@ -173,8 +173,6 @@ async function copyDiagnostics() {
             {{
               playback.playbackState.value === 'loading'
                 ? 'Loading'
-                : playback.isBuffering.value
-                  ? 'Buffering'
                 : playback.playbackState.value === 'ready'
                   ? playback.isPlaying.value
                     ? 'Playing'
@@ -377,8 +375,6 @@ async function copyDiagnostics() {
                 {{
                   playback.playbackState.value === 'loading'
                       ? 'Loading stream'
-                    : playback.isBuffering.value
-                      ? 'Buffering stream'
                     : playback.playbackState.value === 'error'
                       ? 'Playback error'
                       : playback.isFullscreen.value
