@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
       <LivePlayer :playback="playback" :compact="stickyCompact" />
 
       <div
-        class="grid gap-3 rounded-[2rem] border border-white/10 bg-black/72 p-4 shadow-[0_18px_64px_rgba(0,0,0,0.28)]"
+        class="grid gap-3 rounded-[2rem] border border-white/10 bg-black/56 p-4 shadow-[0_18px_64px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
       >
         <div class="flex w-full gap-3">
           <NInput v-model:value="queryModel" round clearable placeholder="Search channels" class="w-full xl:w-80">
@@ -211,7 +211,9 @@ onBeforeUnmount(() => {
   inset: 0;
   z-index: -1;
   border-radius: 2rem;
-  background: linear-gradient(180deg, rgb(5 5 7 / 0.94), rgb(5 5 7 / 0.7) 74%, rgb(5 5 7 / 0));
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.86), rgb(5 5 7 / 0.52) 74%, rgb(5 5 7 / 0));
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
   pointer-events: none;
 }
 
@@ -223,7 +225,8 @@ onBeforeUnmount(() => {
   bottom: -0.75rem;
   height: 1.5rem;
   z-index: -1;
-  background: linear-gradient(180deg, rgb(5 5 7 / 0.18), rgb(5 5 7 / 0));
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.24), rgb(5 5 7 / 0));
+  filter: blur(6px);
   pointer-events: none;
 }
 </style>

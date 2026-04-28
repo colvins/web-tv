@@ -114,7 +114,9 @@ const groupOptions = computed(() => [
   inset: 0;
   z-index: -1;
   border-radius: 2rem;
-  background: linear-gradient(180deg, rgb(5 5 7 / 0.95), rgb(5 5 7 / 0.72) 76%, rgb(5 5 7 / 0));
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.9), rgb(5 5 7 / 0.58) 76%, rgb(5 5 7 / 0));
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   pointer-events: none;
 }
 
@@ -126,7 +128,8 @@ const groupOptions = computed(() => [
   bottom: -0.5rem;
   height: 1rem;
   z-index: -1;
-  background: linear-gradient(180deg, rgb(5 5 7 / 0.18), rgb(5 5 7 / 0));
+  background: linear-gradient(180deg, rgb(5 5 7 / 0.24), rgb(5 5 7 / 0));
+  filter: blur(6px);
   pointer-events: none;
 }
 </style>
