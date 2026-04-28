@@ -123,6 +123,21 @@ export type LiveExtractionStats = {
   warnings: string[]
 }
 
+export type LiveExtractionPreviewChannel = {
+  name: string
+  group_title: string | null
+  stream_url: string
+}
+
+export type LiveExtractionPreview = {
+  detected_format: string | null
+  groups_count: number
+  channels_count: number
+  group_names: string[]
+  preview_channels: LiveExtractionPreviewChannel[]
+  warnings: string[]
+}
+
 export type LiveChannelGroup = {
   id: string
   source_config_id: string
@@ -468,6 +483,12 @@ export function extractVodSites(sourceConfigId: string): Promise<VodSite[]> {
 
 export function extractLiveChannels(sourceConfigId: string): Promise<LiveExtractionStats> {
   return apiRequest<LiveExtractionStats>(`/configs/${sourceConfigId}/extract-live-channels`, {
+    method: 'POST',
+  })
+}
+
+export function previewLiveChannels(sourceConfigId: string): Promise<LiveExtractionPreview> {
+  return apiRequest<LiveExtractionPreview>(`/configs/${sourceConfigId}/extract-live-preview`, {
     method: 'POST',
   })
 }

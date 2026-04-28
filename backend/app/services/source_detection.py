@@ -77,7 +77,7 @@ def recover_root_config(content: bytes) -> RecoveryResult | None:
             return RecoveryResult(
                 parsed,
                 "image_base64_wrapped",
-                "JPEG-like binary contains an embedded base64-wrapped JSON-like CatVod/FongMi root config.",
+                "JPEG-like binary contains an embedded base64-wrapped JSON-like CatVod root config.",
             )
         return RecoveryResult(
             parsed,
@@ -218,7 +218,7 @@ def _json_detection(value: Any, source_url: str | None = None) -> DetectionResul
     keys = _collect_top_level_keys(value)
     matched = sorted(keys & CATVOD_KEYS)
     if matched:
-        return DetectionResult("catvod_json", 0.96, f"JSON contains CatVod/FongMi keys: {', '.join(matched[:5])}.")
+        return DetectionResult("catvod_json", 0.96, f"JSON contains CatVod keys: {', '.join(matched[:5])}.")
     if looks_like_maccms_collector_payload(value):
         return DetectionResult("plain_json", 0.94, "JSON payload matches a direct MacCMS-style VOD collector response.")
     return DetectionResult("plain_json", 0.9, "Content is valid JSON.")

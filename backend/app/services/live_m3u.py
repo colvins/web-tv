@@ -47,21 +47,42 @@ class ParsedChannel:
     sort_order: int
 
 
+@dataclass(frozen=True)
+class PreparedLiveExtraction:
+    snapshot: SourceSnapshot
+    latest_job: ImportJob
+    channels: list[ParsedChannel]
+    warnings: list[str]
+
+
+async def preview_live_channels(db: AsyncSession, source_config_id: uuid.UUID) -> dict[str, Any]:
+    prepared = await _prepare_live_extraction(db, source_config_id)
+    group_names = sorted({channel.group_title for channel in prepared.channels if channel.group_title})
+    return {
+        "detected_format": prepared.latest_job.detected_format,
+        "groups_count": len(group_names),
+        "channels_count": len(prepared.channels),
+        "group_names": group_names[:10],
+        "preview_channels": [
+            {
+                "name": channel.name,
+                "group_title": channel.group_title,
+                "stream_url": channel.stream_url,
+            }
+            for channel in prepared.channels[:10]
+        ],
+        "warnings": prepared.warnings
+        + [
+            "Preview parsed only the imported M3U source text; channel stream URLs were not requested.",
+            f"Preview used import job {prepared.latest_job.id}.",
+        ],
+    }
+
+
 async def extract_live_channels(db: AsyncSession, source_config_id: uuid.UUID) -> dict[str, Any]:
-    await get_source_config(db, source_config_id)
-    snapshot = await _latest_snapshot(db, source_config_id)
-    if snapshot is None or not isinstance(snapshot.root_config, dict) or snapshot.recovered_format not in SUPPORTED_SNAPSHOT_FORMATS:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Latest successful import does not have a stored M3U snapshot; import the source again",
-        )
-    latest_job = await _latest_successful_import(db, source_config_id)
-
-    raw_m3u = snapshot.root_config.get("raw_m3u")
-    if not isinstance(raw_m3u, str):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Stored snapshot has no M3U text")
-
-    channels, warnings = parse_m3u(raw_m3u)
+    prepared = await _prepare_live_extraction(db, source_config_id)
+    channels = prepared.channels
+    warnings = prepared.warnings
     existing_urls = set(
         await db.scalars(select(LiveChannel.stream_url).where(LiveChannel.source_config_id == source_config_id))
     )
@@ -121,7 +142,7 @@ async def extract_live_channels(db: AsyncSession, source_config_id: uuid.UUID) -
         "warnings": warnings
         + [
             "Only the imported M3U source text was parsed; channel stream URLs were not requested.",
-            f"Extraction used import job {latest_job.id}.",
+            f"Extraction used import job {prepared.latest_job.id}.",
         ],
     }
 
@@ -534,6 +555,29 @@ def _parse_extinf(line: str) -> dict[str, Any]:
     attrs = {match.group(1): match.group(2) for match in ATTR_RE.finditer(line)}
     name = line.rsplit(",", 1)[-1].strip() if "," in line else attrs.get("tvg-name", "Untitled Channel")
     return {"line": line, "attrs": attrs, "name": name or "Untitled Channel"}
+
+
+async def _prepare_live_extraction(db: AsyncSession, source_config_id: uuid.UUID) -> PreparedLiveExtraction:
+    await get_source_config(db, source_config_id)
+    snapshot = await _latest_snapshot(db, source_config_id)
+    if snapshot is None or not isinstance(snapshot.root_config, dict) or snapshot.recovered_format not in SUPPORTED_SNAPSHOT_FORMATS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Latest successful import does not have a stored M3U snapshot; import the source again",
+        )
+    latest_job = await _latest_successful_import(db, source_config_id)
+
+    raw_m3u = snapshot.root_config.get("raw_m3u")
+    if not isinstance(raw_m3u, str):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Stored snapshot has no M3U text")
+
+    channels, warnings = parse_m3u(raw_m3u)
+    return PreparedLiveExtraction(
+        snapshot=snapshot,
+        latest_job=latest_job,
+        channels=channels,
+        warnings=warnings,
+    )
 
 async def _latest_snapshot(db: AsyncSession, source_config_id: uuid.UUID) -> SourceSnapshot | None:
     return await db.scalar(

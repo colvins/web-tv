@@ -6,7 +6,7 @@ This project is `web-tv`, a production-oriented web TV/VOD system.
 
 The goal is to build an Apple TV-style multi-device web app first, with a clean path to possible future iOS/tvOS migration.
 
-The system imports external source configs such as JSON, M3U, M3U8, TXT, CatVod/FongMi-style configs, and generic live/VOD sources.
+The system imports external source configs such as JSON, M3U, M3U8, TXT, CatVod-style configs, and generic live/VOD sources.
 
 ## Global task rules
 
@@ -23,7 +23,7 @@ The system imports external source configs such as JSON, M3U, M3U8, TXT, CatVod/
 - Do not add seed/fake data unless explicitly requested.
 - Do not batch-probe channel URLs or external media URLs unless explicitly requested.
 - Do not execute spider/JAR/JS/Python/ext code from imported sources.
-- Do not load dynamic CatVod/FongMi spider runtime unless a sandboxed runtime design is explicitly requested.
+- Do not load dynamic CatVod spider runtime unless a sandboxed runtime design is explicitly requested.
 - Analyze unknown source formats safely before deciding how to store or use them.
 
 ## Frontend rules
@@ -55,7 +55,7 @@ The system imports external source configs such as JSON, M3U, M3U8, TXT, CatVod/
 - Store enough metadata to inspect source structure later.
 - Do not execute imported code.
 - Do not fetch nested URLs unless the task explicitly asks for it.
-- For FongMi/CatVod-style configs, separate root config analysis, spider artifact analysis, and actual spider runtime work.
+- For CatVod-style configs, separate root config analysis, spider artifact analysis, and actual spider runtime work.
 - Spider runtime work requires an explicit sandbox design before implementation.
 
 ## Backend rules

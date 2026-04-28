@@ -33,11 +33,13 @@ import {
   importSourceConfig,
   listSourceConfigs,
   listSourceVodSites,
+  previewLiveChannels,
   setCurrentVodSite,
   updateSourceConfig,
   updateVodSite,
   type CurrentVodSite,
   type ImportJob,
+  type LiveExtractionPreview,
   type LiveExtractionStats,
   type SourceConfig,
   type SourceConfigPayload,
@@ -56,6 +58,10 @@ const extractingLiveIds = ref<Set<string>>(new Set())
 const latestJob = ref<ImportJob | null>(null)
 const latestSnapshot = ref<SourceSnapshot | null>(null)
 const latestLiveExtraction = ref<LiveExtractionStats | null>(null)
+const livePreviewSource = ref<SourceConfig | null>(null)
+const livePreview = ref<LiveExtractionPreview | null>(null)
+const livePreviewLoading = ref(false)
+const confirmingLiveImport = ref(false)
 const currentVodSite = ref<CurrentVodSite | null>(null)
 const settingCurrentIds = ref<Set<string>>(new Set())
 const vodAnalysisOpenIds = ref<Set<string>>(new Set())
@@ -229,6 +235,10 @@ async function runImport(
     await Promise.all([loadSources(), loadCurrentVodSite(), loadLatestSnapshot(source.id)])
     if (latestJob.value.status === 'success') {
       message.success(options.successMessage ?? 'Import completed')
+      const refreshed = sources.value.find((item) => item.id === source.id) ?? source
+      if (isLivePlaylistImport(refreshed, latestJob.value)) {
+        await openLivePreview(refreshed)
+      }
     } else {
       message.error('Import failed')
     }
@@ -245,6 +255,7 @@ async function extractLive(source: SourceConfig) {
   extractingLiveIds.value = new Set(extractingLiveIds.value).add(source.id)
   try {
     latestLiveExtraction.value = await extractLiveChannels(source.id)
+    closeLivePreview()
     await loadSources()
     message.success(`Extracted ${latestLiveExtraction.value.channels_count} live channels`)
   } catch (error) {
@@ -254,6 +265,36 @@ async function extractLive(source: SourceConfig) {
     next.delete(source.id)
     extractingLiveIds.value = next
   }
+}
+
+async function openLivePreview(source: SourceConfig) {
+  livePreviewSource.value = source
+  livePreview.value = null
+  livePreviewLoading.value = true
+  try {
+    livePreview.value = await previewLiveChannels(source.id)
+  } catch (error) {
+    livePreviewSource.value = null
+    showError(error, 'Unable to preview live channels')
+  } finally {
+    livePreviewLoading.value = false
+  }
+}
+
+async function confirmLiveImport() {
+  if (!livePreviewSource.value || !livePreview.value) return
+  confirmingLiveImport.value = true
+  try {
+    await extractLive(livePreviewSource.value)
+  } finally {
+    confirmingLiveImport.value = false
+  }
+}
+
+function closeLivePreview() {
+  livePreviewSource.value = null
+  livePreview.value = null
+  livePreviewLoading.value = false
 }
 
 async function openSites(source: SourceConfig) {
@@ -380,7 +421,7 @@ function formatDate(value: string | null) {
 function detectedTypeLabel(source: SourceConfig | null) {
   if (!source?.latest_detected_format) return 'Not imported'
   if (source.latest_detected_format === 'catvod_json' || source.latest_detected_format === 'base64_json' || source.latest_detected_format === 'binary_wrapped') {
-    return 'FongMi config'
+    return 'CatVod-style config'
   }
   if (source.latest_detected_format === 'm3u' || source.latest_detected_format === 'txt') {
     return 'Live playlist'
@@ -404,6 +445,11 @@ function supportsLiveExtraction(source: SourceConfig) {
   return ['m3u', 'm3u8', 'txt'].includes(source.source_type)
 }
 
+function isLivePlaylistImport(source: SourceConfig, job: ImportJob | null) {
+  if (!job || job.status !== 'success') return false
+  return ['m3u', 'txt'].includes(job.detected_format ?? '') || ['m3u', 'm3u8', 'txt'].includes(source.source_type)
+}
+
 function isVodAnalysisOpen(sourceId: string) {
   return vodAnalysisOpenIds.value.has(sourceId)
 }
@@ -425,7 +471,7 @@ onMounted(async () => {
           <p class="text-sm uppercase tracking-[0.28em] text-white/42">Source Library</p>
           <h2 class="mt-3 text-3xl font-semibold sm:text-5xl">Detect and import source URLs.</h2>
           <p class="mt-4 max-w-3xl text-sm leading-6 text-white/58">
-            Add a source name and URL, then let the backend detect whether it is a MacCMS VOD collector, FongMi-style config, live playlist, or unsupported response.
+            Add a source name and URL, then let the backend detect whether it is a MacCMS VOD collector, CatVod-style config, live playlist, or unsupported response.
           </p>
         </div>
         <div class="flex flex-wrap gap-3">
@@ -817,6 +863,97 @@ onMounted(async () => {
       <p v-if="selectedSites.length === 0" class="rounded-3xl border border-white/10 bg-white/6 p-6 text-white/58">
         No sites extracted for this source.
       </p>
+    </div>
+  </NModal>
+
+  <NModal
+    :show="livePreviewSource !== null"
+    preset="card"
+    :title="livePreviewSource ? `${livePreviewSource.name} Live Preview` : 'Live Preview'"
+    class="sites-modal"
+    :bordered="false"
+    @update:show="(show) => { if (!show && !confirmingLiveImport) closeLivePreview() }"
+  >
+    <div v-if="livePreviewLoading" class="grid gap-3">
+      <div class="h-20 animate-pulse rounded-3xl bg-white/8"></div>
+      <div class="h-28 animate-pulse rounded-3xl bg-white/8"></div>
+      <div class="h-52 animate-pulse rounded-3xl bg-white/8"></div>
+    </div>
+    <div v-else-if="livePreview" class="space-y-4">
+      <div class="grid gap-3 text-sm text-white/62 sm:grid-cols-3">
+        <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+          <span class="block text-white/40">Detected format</span>
+          <span class="mt-1 block text-white">{{ livePreview.detected_format ?? 'Unknown' }}</span>
+        </div>
+        <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+          <span class="block text-white/40">Live channels</span>
+          <span class="mt-1 block text-white">{{ livePreview.channels_count }}</span>
+        </div>
+        <div class="rounded-3xl border border-white/10 bg-white/6 p-4">
+          <span class="block text-white/40">Groups</span>
+          <span class="mt-1 block text-white">{{ livePreview.groups_count }}</span>
+        </div>
+      </div>
+
+      <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+        <p class="text-xs uppercase tracking-[0.16em] text-white/40">Group names</p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <span
+            v-for="groupName in livePreview.group_names"
+            :key="groupName"
+            class="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs text-white/70"
+          >
+            {{ groupName }}
+          </span>
+          <span v-if="livePreview.group_names.length === 0" class="text-sm text-white/46">No groups found</span>
+        </div>
+      </div>
+
+      <div class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-xs uppercase tracking-[0.16em] text-white/40">Preview channels</p>
+          <span class="text-xs text-white/42">First {{ livePreview.preview_channels.length }} items</span>
+        </div>
+        <div class="mt-3 grid max-h-[40vh] gap-3 overflow-y-auto pr-1">
+          <article
+            v-for="channel in livePreview.preview_channels"
+            :key="`${channel.name}-${channel.stream_url}`"
+            class="rounded-3xl border border-white/10 bg-white/6 p-4"
+          >
+            <div class="flex flex-wrap items-center gap-2">
+              <h3 class="text-sm font-semibold text-white">{{ channel.name }}</h3>
+              <span
+                v-if="channel.group_title"
+                class="rounded-full border border-white/10 px-2 py-1 text-[11px] text-white/54"
+              >
+                {{ channel.group_title }}
+              </span>
+            </div>
+            <p class="mt-2 break-all text-xs leading-5 text-white/46">{{ channel.stream_url }}</p>
+          </article>
+          <p v-if="livePreview.preview_channels.length === 0" class="text-sm text-white/46">No channels found.</p>
+        </div>
+      </div>
+
+      <div
+        v-if="livePreview.warnings.length"
+        class="rounded-[1.5rem] border border-amber-300/16 bg-amber-300/10 p-4 text-sm leading-6 text-amber-50"
+      >
+        <p v-for="warning in livePreview.warnings" :key="warning">{{ warning }}</p>
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <NButton round :disabled="confirmingLiveImport" @click="closeLivePreview">Cancel</NButton>
+        <NButton
+          round
+          type="primary"
+          :disabled="livePreview.channels_count === 0"
+          :loading="confirmingLiveImport || extractingLiveIds.has(livePreviewSource?.id ?? '')"
+          @click="confirmLiveImport"
+        >
+          Confirm Import
+        </NButton>
+      </div>
     </div>
   </NModal>
 </template>

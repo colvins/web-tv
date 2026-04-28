@@ -14,6 +14,21 @@ class LiveExtractionStats(BaseModel):
     warnings: list[str]
 
 
+class LiveExtractionPreviewChannel(BaseModel):
+    name: str
+    group_title: str | None = None
+    stream_url: str
+
+
+class LiveExtractionPreview(BaseModel):
+    detected_format: str | None = None
+    groups_count: int
+    channels_count: int
+    group_names: list[str]
+    preview_channels: list[LiveExtractionPreviewChannel]
+    warnings: list[str]
+
+
 class LiveChannelGroupRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

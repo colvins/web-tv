@@ -138,7 +138,7 @@ def _classify_site(entry: dict[str, Any], api_string: str | None, ext_type: str 
     combined = f"{lowered_api} {ext_text}".strip()
 
     if _looks_like_spider_api(api_string):
-        return "spider_required", "API looks like a CatVod/FongMi spider class reference instead of a direct HTTP API."
+        return "spider_required", "API looks like a CatVod spider class reference instead of a direct HTTP API."
 
     if _contains_hint(combined, UNSUPPORTED_SPECIAL_HINTS) or _has_special_scheme(api_string):
         return "unsupported_special", "API or ext suggests native/plugin/local runtime behavior not supported by a generic web VOD client."
