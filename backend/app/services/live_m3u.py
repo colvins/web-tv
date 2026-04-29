@@ -118,23 +118,24 @@ async def extract_live_channels(db: AsyncSession, source_config_id: uuid.UUID) -
         else:
             created_count += 1
 
-    disabled_missing_count = 0
+    disable_filters = [
+        LiveChannel.source_config_id == source_config_id,
+        LiveChannel.enabled.is_(True),
+    ]
     if seen_urls:
-        result = await db.execute(
-            update(LiveChannel)
-            .where(
-                LiveChannel.source_config_id == source_config_id,
-                LiveChannel.stream_url.not_in(seen_urls),
-                LiveChannel.enabled.is_(True),
-            )
-            .values(enabled=False)
-        )
-        disabled_missing_count = result.rowcount or 0
+        disable_filters.append(LiveChannel.stream_url.not_in(seen_urls))
+
+    result = await db.execute(
+        update(LiveChannel)
+        .where(*disable_filters)
+        .values(enabled=False)
+    )
+    disabled_missing_count = result.rowcount or 0
 
     await _refresh_group_counts(db, source_config_id)
     await db.commit()
     return {
-        "groups_count": len(groups_by_name),
+        "groups_count": len({channel.group_title for channel in channels if channel.group_title}),
         "channels_count": len(channels),
         "created_count": created_count,
         "updated_count": updated_count,
@@ -151,7 +152,10 @@ async def list_groups(db: AsyncSession, source_config_id: uuid.UUID) -> list[Liv
     await get_source_config(db, source_config_id)
     result = await db.scalars(
         select(LiveChannelGroup)
-        .where(LiveChannelGroup.source_config_id == source_config_id)
+        .where(
+            LiveChannelGroup.source_config_id == source_config_id,
+            LiveChannelGroup.channel_count > 0,
+        )
         .order_by(LiveChannelGroup.sort_order.asc(), LiveChannelGroup.name.asc())
     )
     return list(result)
@@ -290,7 +294,10 @@ async def diagnose_channel(db: AsyncSession, channel_id: uuid.UUID) -> dict[str,
 async def count_live_channels_by_source(db: AsyncSession) -> dict[uuid.UUID, int]:
     rows = await db.execute(
         select(LiveChannel.source_config_id, func.count(LiveChannel.id))
-        .where(LiveChannel.source_config_id.is_not(None))
+        .where(
+            LiveChannel.source_config_id.is_not(None),
+            LiveChannel.enabled.is_(True),
+        )
         .group_by(LiveChannel.source_config_id)
     )
     return {source_id: count for source_id, count in rows if source_id is not None}
@@ -636,7 +643,10 @@ async def _refresh_group_counts(db: AsyncSession, source_config_id: uuid.UUID) -
     )
     counts = await db.execute(
         select(LiveChannel.group_id, func.count(LiveChannel.id))
-        .where(LiveChannel.source_config_id == source_config_id)
+        .where(
+            LiveChannel.source_config_id == source_config_id,
+            LiveChannel.enabled.is_(True),
+        )
         .group_by(LiveChannel.group_id)
     )
     count_map = {group_id: channel_count for group_id, channel_count in counts.all() if group_id is not None}
