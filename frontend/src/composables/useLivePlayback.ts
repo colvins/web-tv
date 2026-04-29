@@ -190,6 +190,13 @@ export function useLivePlayback() {
     return guessStreamType(url) === 'direct_ts'
   }
 
+  function getDiagnosedPlaybackUrl(diagnosis: LiveChannelDiagnosis, fallbackUrl: string) {
+    if (diagnosis.stream_type_guess === 'hls_m3u8' && diagnosis.browser_playback_url) {
+      return diagnosis.browser_playback_url
+    }
+    return fallbackUrl
+  }
+
   function logPlaybackFailure(error: PlaybackErrorInfo) {
     const signature = JSON.stringify({
       channel: selectedChannel.value?.name ?? 'unknown-channel',
@@ -404,51 +411,7 @@ export function useLivePlayback() {
       }
 
       if (Hls.isSupported()) {
-        hls = new Hls()
-        hls.attachMedia(video)
-        hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-          hls?.loadSource(streamUrl)
-        })
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          void attemptPlay()
-        })
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          hlsError.value = {
-            type: data.type ?? 'unknown',
-            details: [data.details, data.response?.code ? `HTTP ${data.response.code}` : undefined]
-              .filter(Boolean)
-              .join(' | '),
-          }
-
-          if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR && !data.fatal) {
-            playbackState.value = 'loading'
-            playerStatusText.value = 'Buffering stream...'
-            revealControls()
-            return
-          }
-
-          if (data.details === Hls.ErrorDetails.BUFFER_APPENDING_ERROR && data.fatal && !hlsMediaRecoveryAttempted) {
-            hlsMediaRecoveryAttempted = true
-            playerStatusText.value = 'Recovering stream...'
-            playbackState.value = 'loading'
-            revealControls()
-            hls?.recoverMediaError()
-            return
-          }
-
-          if (data.fatal && data.type === Hls.ErrorTypes.MEDIA_ERROR && !hlsMediaRecoveryAttempted) {
-            hlsMediaRecoveryAttempted = true
-            playerStatusText.value = 'Recovering stream...'
-            playbackState.value = 'loading'
-            revealControls()
-            hls?.recoverMediaError()
-            return
-          }
-
-          if (data.fatal) {
-            setPlaybackError(classifyHlsError(data))
-          }
-        })
+        attachHlsPlayback(streamUrl)
         return
       }
 
@@ -460,23 +423,9 @@ export function useLivePlayback() {
     await attemptPlay()
   }
 
-  async function startDiagnosedHlsPlayback(diagnosis: LiveChannelDiagnosis) {
+  function attachHlsPlayback(streamUrl: string) {
     const video = videoEl.value
-    if (!video || !selectedChannel.value) return false
-
-    const streamUrl = selectedChannel.value.stream_url
-    channelDiagnosis.value = diagnosis
-
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      playbackState.value = 'loading'
-      playerStatusText.value = 'Retrying stream as HLS...'
-      revealControls()
-      video.src = streamUrl
-      await attemptPlay()
-      return true
-    }
-
-    if (!Hls.isSupported()) return false
+    if (!video) return false
 
     hls?.destroy()
     hls = null
@@ -484,10 +433,6 @@ export function useLivePlayback() {
     mpegtsPlayer?.detachMediaElement()
     mpegtsPlayer?.destroy()
     mpegtsPlayer = null
-
-    playbackState.value = 'loading'
-    playerStatusText.value = 'Retrying stream as HLS...'
-    revealControls()
 
     hls = new Hls()
     hls.attachMedia(video)
@@ -531,11 +476,84 @@ export function useLivePlayback() {
       }
 
       if (data.fatal) {
-        setPlaybackError(classifyHlsError(data))
+        void handleFatalHlsError(data)
       }
     })
 
     return true
+  }
+
+  async function handleFatalHlsError(data: {
+    details?: string
+    fatal?: boolean
+    error?: unknown
+    networkDetails?: unknown
+    response?: { code?: number; text?: string }
+  }) {
+    const channel = selectedChannel.value
+    if (!channel) {
+      setPlaybackError(classifyHlsError(data))
+      return
+    }
+
+    const shouldRetryWithDiagnosis =
+      !diagnosedHlsRetryAttempted &&
+      (data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+        data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+        data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR ||
+        data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT ||
+        !!data.networkDetails)
+
+    if (!shouldRetryWithDiagnosis) {
+      setPlaybackError(classifyHlsError(data))
+      return
+    }
+
+    diagnosedHlsRetryAttempted = true
+    channelDiagnosisLoading.value = true
+    channelDiagnosisError.value = ''
+
+    try {
+      const diagnosis = await diagnoseLiveChannel(channel.id)
+      streamDiagnosisCache.set(channel.id, diagnosis)
+      channelDiagnosis.value = diagnosis
+      if (diagnosis.stream_type_guess === 'hls_m3u8') {
+        await startDiagnosedHlsPlayback(diagnosis)
+        return
+      }
+      setPlaybackError(classifyHlsError(data))
+    } catch (error) {
+      streamDiagnosisCache.set(channel.id, null)
+      channelDiagnosisError.value = error instanceof ApiError ? error.message : 'Unable to diagnose this channel.'
+      setPlaybackError(classifyHlsError(data))
+    } finally {
+      channelDiagnosisLoading.value = false
+      revealControls()
+    }
+  }
+
+  async function startDiagnosedHlsPlayback(diagnosis: LiveChannelDiagnosis) {
+    const video = videoEl.value
+    if (!video || !selectedChannel.value) return false
+
+    const streamUrl = getDiagnosedPlaybackUrl(diagnosis, selectedChannel.value.stream_url)
+    channelDiagnosis.value = diagnosis
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      playbackState.value = 'loading'
+      playerStatusText.value = 'Retrying stream as HLS...'
+      revealControls()
+      video.src = streamUrl
+      await attemptPlay()
+      return true
+    }
+
+    if (!Hls.isSupported()) return false
+
+    playbackState.value = 'loading'
+    playerStatusText.value = 'Retrying stream as HLS...'
+    revealControls()
+    return attachHlsPlayback(streamUrl)
   }
 
   async function startMpegtsFallback(streamUrl: string) {

@@ -224,6 +224,10 @@ async def diagnose_channel(db: AsyncSession, channel_id: uuid.UUID) -> dict[str,
                     warnings.append("A browser playback profile hint was detected, but it could not be verified.")
 
             if stream_type_guess == "hls_m3u8":
+                if preview.redirect_count > 0 and preview.final_url != channel.stream_url:
+                    browser_playback_profile = "redirected_hls"
+                    browser_playback_url = preview.final_url
+                    warnings.append("The original HLS URL redirects; browser playback can retry the resolved playlist URL.")
                 m3u8_info = _inspect_m3u8_preview(preview.preview_bytes, preview.final_url)
                 if m3u8_info["preview_text"]:
                     warnings.append("Playlist inspection used a limited text preview.")
